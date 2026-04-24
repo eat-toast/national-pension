@@ -1,0 +1,4 @@
+# Runtime dependencies are optional for local inspection. The code uses the
+# Python standard library by default and can run without these packages.
+requests>=2.32.0
+python-dotenv>=1.0.1
