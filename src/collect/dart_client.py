@@ -17,11 +17,14 @@ from src.utils import parse_iso_date
 
 LIST_ENDPOINT = "https://opendart.fss.or.kr/api/list.json"
 DOCUMENT_ENDPOINT = "https://opendart.fss.or.kr/api/document.xml"
+MAJORSTOCK_ENDPOINT = "https://opendart.fss.or.kr/api/majorstock.json"
+ELESTOCK_ENDPOINT = "https://opendart.fss.or.kr/api/elestock.json"
 DEFAULT_REPORT_KEYWORDS = [
     "주식등의대량보유상황보고서",
     "임원ㆍ주요주주",
     "특정증권",
 ]
+DEFAULT_REPORT_DETAIL_TYPES = ["D001", "D002"]
 
 
 @dataclass(slots=True)
@@ -100,11 +103,49 @@ class DartClient:
         return self.retry_delay_seconds * (2 ** (attempt - 1))
 
     def list_reports(self, start_date: str, end_date: str) -> list[ReportRecord]:
-        return self.list_reports_by_keywords(
+        return self.list_reports_by_detail_types(
             start_date,
             end_date,
-            DEFAULT_REPORT_KEYWORDS,
+            DEFAULT_REPORT_DETAIL_TYPES,
         )
+
+    def list_reports_by_detail_types(
+        self,
+        start_date: str,
+        end_date: str,
+        detail_types: list[str],
+    ) -> list[ReportRecord]:
+        reports: list[ReportRecord] = []
+        seen: set[str] = set()
+        for detail_type in detail_types:
+            page_no = 1
+            while True:
+                payload = self._get_json(
+                    LIST_ENDPOINT,
+                    {
+                        "crtfc_key": self.api_key,
+                        "bgn_de": parse_iso_date(start_date).replace("-", ""),
+                        "end_de": parse_iso_date(end_date).replace("-", ""),
+                        "last_reprt_at": "Y",
+                        "pblntf_detail_ty": detail_type,
+                        "page_no": page_no,
+                        "page_count": 100,
+                    },
+                )
+                status = payload.get("status")
+                if status not in {"000", "013"}:
+                    raise RuntimeError(f"DART list.json failed: {status} {payload.get('message')}")
+                for item in payload.get("list", []):
+                    receipt_no = item["rcept_no"]
+                    if receipt_no in seen:
+                        continue
+                    seen.add(receipt_no)
+                    reports.append(_report_from_list_item(item))
+                total_pages = int(payload.get("total_page", 1) or 1)
+                if page_no >= total_pages:
+                    break
+                page_no += 1
+        return reports
 
     def list_reports_by_keywords(
         self,
@@ -162,6 +203,43 @@ class DartClient:
                 "rcept_no": receipt_no,
             },
         )
+
+    def majorstock_reports(self, corp_code: str) -> list[dict[str, Any]]:
+        return self._ownership_reports(MAJORSTOCK_ENDPOINT, corp_code)
+
+    def elestock_reports(self, corp_code: str) -> list[dict[str, Any]]:
+        return self._ownership_reports(ELESTOCK_ENDPOINT, corp_code)
+
+    def _ownership_reports(self, endpoint: str, corp_code: str) -> list[dict[str, Any]]:
+        payload = self._get_json(
+            endpoint,
+            {
+                "crtfc_key": self.api_key,
+                "corp_code": corp_code,
+            },
+        )
+        status = payload.get("status")
+        if status == "013":
+            return []
+        if status != "000":
+            raise RuntimeError(f"DART ownership API failed: {status} {payload.get('message')}")
+        return payload.get("list", [])
+
+
+def _report_from_list_item(item: dict[str, Any]) -> ReportRecord:
+    report_name = item.get("report_nm", "")
+    return ReportRecord(
+        receipt_no=item["rcept_no"],
+        corp_code=item.get("corp_code"),
+        corp_name=item.get("corp_name", ""),
+        stock_code=item.get("stock_code"),
+        report_name=report_name,
+        filer_name=item.get("flr_nm", ""),
+        disclosed_at=parse_iso_date(item["rcept_dt"]),
+        is_amended="정정" in report_name or "[기재정정]" in report_name,
+        source_url=f"https://dart.fss.or.kr/dsaf001/main.do?rcpNo={item['rcept_no']}",
+        raw_payload=json.dumps(item, ensure_ascii=False),
+    )
 
 
 def _should_retry_http_error(error: HTTPError) -> bool:

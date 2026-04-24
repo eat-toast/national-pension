@@ -11,7 +11,7 @@ class _FakeClient:
     def __init__(self) -> None:
         self.api_key = "test"
 
-    def list_reports_by_keywords(self, start_date, end_date, report_keywords):
+    def list_reports_by_detail_types(self, start_date, end_date, detail_types):
         return [
             ReportRecord(
                 receipt_no="20260420000259",
@@ -32,6 +32,27 @@ class _FakeClient:
                 disclosed_at="2026-04-20",
             ),
         ]
+
+    def majorstock_reports(self, corp_code: str):
+        return []
+
+    def elestock_reports(self, corp_code: str):
+        if corp_code == "01042775":
+            return [
+                {
+                    "rcept_no": "20260420000259",
+                    "rcept_dt": "2026-04-20",
+                    "corp_code": "01042775",
+                    "corp_name": "HL만도",
+                    "repror": "국민연금공단",
+                    "isu_main_shrholdr": "10%이상주주",
+                    "sp_stock_lmp_cnt": "4,685,078",
+                    "sp_stock_lmp_irds_cnt": "-453,075",
+                    "sp_stock_lmp_rate": "9.98",
+                    "sp_stock_lmp_irds_rate": "-0.96",
+                }
+            ]
+        return []
 
     def fetch_text(self, url: str) -> str:
         if "20260420000259" in url and "main.do" in url:
@@ -103,6 +124,9 @@ class SyncServiceTest(unittest.TestCase):
             rows = repository.list_events_until("2026-04-20", "effective_date")
             self.assertEqual(len(rows), 1)
             self.assertEqual(rows[0]["company_name"], "HL만도")
+            self.assertEqual(rows[0]["shares_after"], 4685078)
+            self.assertEqual(rows[0]["delta_shares"], -453075)
+            self.assertAlmostEqual(rows[0]["ownership_after"], 0.0998, places=4)
         finally:
             repository.close()
 
