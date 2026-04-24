@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import asdict, dataclass
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
 from urllib.request import urlopen
@@ -14,6 +15,7 @@ from src.models import ReportSection
 VIEWER_PATTERN = re.compile(
     r'viewDoc\("(?P<rcpNo>\d+)",\s*"(?P<dcmNo>\d+)",\s*"(?P<eleId>\d+)",\s*"(?P<offset>\d+)",\s*"(?P<length>\d+)",\s*"(?P<dtd>[^"]+)"'
 )
+RAW_DART_DIR = Path("data/raw/dart")
 
 
 @dataclass(slots=True)
@@ -98,7 +100,7 @@ def inspect_report_for_keyword(
     scan_all_sections: bool = True,
 ) -> ReportInspection:
     main_url = _main_url(receipt_no)
-    main_html = client.fetch_text(main_url)
+    main_html = _fetch_text_with_cache(client, main_url, receipt_no, "main.html")
     page_hit = keyword in main_html
     viewer_url = None
     viewer_hit = False
@@ -108,7 +110,7 @@ def inspect_report_for_keyword(
         descriptors = descriptors[:1]
     for descriptor in descriptors:
         viewer_url = _viewer_url(descriptor)
-        viewer_html = client.fetch_text(viewer_url)
+        viewer_html = _fetch_text_with_cache(client, viewer_url, receipt_no, _viewer_cache_name(descriptor))
         if keyword in viewer_html:
             viewer_hit = True
             viewer_excerpt = _extract_excerpt(viewer_html, keyword)
@@ -122,15 +124,16 @@ def inspect_report_for_keyword(
 
 
 def fetch_viewer_sections(client: DartClient, receipt_no: str) -> list[ReportSection]:
-    main_html = client.fetch_text(_main_url(receipt_no))
+    main_html = _fetch_text_with_cache(client, _main_url(receipt_no), receipt_no, "main.html")
     sections: list[ReportSection] = []
     for descriptor in _extract_viewer_descriptors(main_html):
         viewer_url = _viewer_url(descriptor)
+        viewer_html = _fetch_text_with_cache(client, viewer_url, receipt_no, _viewer_cache_name(descriptor))
         sections.append(
             ReportSection(
                 title=descriptor.get("text", ""),
                 url=viewer_url,
-                html=client.fetch_text(viewer_url),
+                html=viewer_html,
             )
         )
     return sections
@@ -203,6 +206,25 @@ def _viewer_url(values: dict[str, str]) -> str:
             }
         )
     )
+
+
+def _viewer_cache_name(values: dict[str, str]) -> str:
+    ele_id = re.sub(r"[^0-9A-Za-z_-]+", "_", values.get("eleId", "unknown"))
+    return f"viewer_{ele_id}.html"
+
+
+def _fetch_text_with_cache(client: DartClient, url: str, receipt_no: str, filename: str) -> str:
+    cache_path = RAW_DART_DIR / receipt_no / filename
+    try:
+        text = client.fetch_text(url)
+    except Exception:
+        if cache_path.exists():
+            return cache_path.read_text(encoding="utf-8")
+        raise
+    if isinstance(client, DartClient):
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        cache_path.write_text(text, encoding="utf-8")
+    return text
 
 
 def _extract_excerpt(text: str, keyword: str, radius: int = 120) -> str:
