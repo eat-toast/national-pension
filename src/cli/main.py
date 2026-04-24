@@ -12,6 +12,7 @@ from src.collect.probe import probe_filings_by_date
 from src.collect.sector_service import sync_sector_map
 from src.collect.service import sync_reports
 from src.config import AppConfig
+from src.dashboard.service import export_dashboard
 from src.db.repository import Repository
 from src.export.xlsx_writer import export_snapshot_workbook
 from src.snapshot.service import build_snapshot
@@ -44,6 +45,12 @@ def build_parser() -> argparse.ArgumentParser:
     export_parser.add_argument("--date", required=True)
     export_parser.add_argument("--basis", choices=("effective_date", "disclosure_date"), required=True)
     export_parser.add_argument("--output")
+
+    dashboard_parser = subparsers.add_parser("export-dashboard", help="2024 기준선과 변동 이벤트로 HTML 대시보드를 출력합니다.")
+    dashboard_parser.add_argument("--date", required=True)
+    dashboard_parser.add_argument("--basis", choices=("effective_date", "disclosure_date"), default="disclosure_date")
+    dashboard_parser.add_argument("--baseline", default="국내주식 종목별 투자 현황(2024년 말).xlsx")
+    dashboard_parser.add_argument("--output")
 
     alerts_parser = subparsers.add_parser("send-alerts", help="카카오톡 나에게 보내기 알림을 보냅니다.")
     alerts_parser.add_argument("--since", required=True)
@@ -147,6 +154,17 @@ def main(argv: list[str] | None = None) -> int:
                 else config.output_dir / f"nps_snapshot_{safe_slug(as_of_date)}_{args.basis}.xlsx"
             )
             exported = export_snapshot_workbook(output_path, as_of_date, args.basis, rows, event_rows, sector_rows)
+            print(str(exported))
+            return 0
+
+        if args.command == "export-dashboard":
+            as_of_date = parse_iso_date(args.date)
+            output_path = (
+                Path(args.output)
+                if args.output
+                else config.output_dir / f"nps_dashboard_{safe_slug(as_of_date)}_{args.basis}.html"
+            )
+            exported = export_dashboard(output_path, args.baseline, repository, as_of_date, args.basis)
             print(str(exported))
             return 0
 

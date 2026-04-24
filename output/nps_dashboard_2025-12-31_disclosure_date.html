@@ -1,0 +1,438 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>국민연금 국내주식 변동 대시보드</title>
+  <style>
+    :root {
+      --bg: #f6f7f9;
+      --surface: #ffffff;
+      --ink: #18202b;
+      --muted: #667085;
+      --line: #d9dee7;
+      --teal: #007c89;
+      --plum: #6d3a8f;
+      --coral: #d55b4a;
+      --amber: #b7791f;
+      --green: #2f7d52;
+      --blue: #2d5b9a;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--ink);
+      background: var(--bg);
+      letter-spacing: 0;
+    }
+    header {
+      border-bottom: 1px solid var(--line);
+      background: var(--surface);
+    }
+    .wrap {
+      width: min(1440px, calc(100vw - 40px));
+      margin: 0 auto;
+    }
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      gap: 24px;
+      padding: 22px 0 18px;
+    }
+    h1 {
+      margin: 0;
+      font-size: 26px;
+      line-height: 1.2;
+      font-weight: 760;
+    }
+    .meta {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+    select, button {
+      height: 34px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: var(--surface);
+      color: var(--ink);
+      padding: 0 10px;
+      font: inherit;
+      font-size: 13px;
+    }
+    button {
+      cursor: pointer;
+      font-weight: 650;
+    }
+    main {
+      padding: 18px 0 36px;
+    }
+    .kpis {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 18px;
+    }
+    .metric {
+      min-height: 96px;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+    }
+    .metric-label {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .metric-value {
+      margin-top: 9px;
+      font-size: 26px;
+      font-weight: 780;
+      white-space: nowrap;
+    }
+    .metric-detail {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.35fr) minmax(360px, 0.65fr);
+      gap: 14px;
+      align-items: start;
+    }
+    .section {
+      border-top: 1px solid var(--line);
+      padding: 16px 0 0;
+      margin-top: 2px;
+    }
+    .section-title {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 16px;
+      margin-bottom: 10px;
+    }
+    h2 {
+      margin: 0;
+      font-size: 16px;
+      line-height: 1.25;
+    }
+    .hint {
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .chart-surface, .table-surface {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+      overflow: hidden;
+    }
+    .chart {
+      min-height: 290px;
+      padding: 14px 14px 10px;
+    }
+    .bars {
+      display: grid;
+      grid-template-columns: repeat(var(--bar-count), minmax(2px, 1fr));
+      align-items: end;
+      gap: 3px;
+      height: 220px;
+      padding: 8px 4px 0;
+      border-bottom: 1px solid var(--line);
+    }
+    .bar {
+      min-height: 1px;
+      border-radius: 4px 4px 0 0;
+      background: var(--teal);
+      position: relative;
+    }
+    .bar.negative { background: var(--coral); }
+    .chart-legend {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      color: var(--muted);
+      font-size: 12px;
+      padding-top: 10px;
+    }
+    .split {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+      margin-top: 14px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    th, td {
+      padding: 10px 12px;
+      border-bottom: 1px solid #e9edf3;
+      vertical-align: middle;
+      text-align: left;
+    }
+    th {
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 750;
+      background: #fafbfc;
+      white-space: nowrap;
+    }
+    td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+    tbody tr:hover { background: #f8fafc; }
+    .delta-up { color: var(--green); font-weight: 700; }
+    .delta-down { color: var(--coral); font-weight: 700; }
+    .rank {
+      width: 30px;
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+    }
+    .company {
+      font-weight: 700;
+      max-width: 220px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .mini-bars {
+      display: grid;
+      gap: 8px;
+      padding: 14px;
+    }
+    .mini-row {
+      display: grid;
+      grid-template-columns: minmax(96px, 150px) 1fr 76px;
+      gap: 8px;
+      align-items: center;
+      font-size: 12px;
+    }
+    .track {
+      height: 8px;
+      background: #edf1f5;
+      border-radius: 999px;
+      overflow: hidden;
+    }
+    .fill {
+      height: 100%;
+      width: var(--w);
+      background: var(--plum);
+    }
+    .fill.down { background: var(--coral); }
+    .fill.up { background: var(--green); }
+    .tabs {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 10px;
+      flex-wrap: wrap;
+    }
+    .tab[aria-pressed="true"] {
+      color: #fff;
+      background: var(--ink);
+      border-color: var(--ink);
+    }
+    @media (max-width: 1100px) {
+      .kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .grid, .split { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 700px) {
+      .wrap { width: min(100vw - 24px, 1440px); }
+      .topbar { align-items: flex-start; flex-direction: column; }
+      .actions { justify-content: flex-start; }
+      .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .metric-value { font-size: 21px; }
+      table { font-size: 12px; }
+      th, td { padding: 8px; }
+      .company { max-width: 140px; }
+      .mini-row { grid-template-columns: 96px 1fr 64px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap topbar">
+      <div>
+        <h1>국민연금 국내주식 변동 대시보드</h1>
+        <div class="meta" id="meta"></div>
+      </div>
+      <div class="actions">
+        <select id="trendMetric" aria-label="추세 지표">
+          <option value="eventCount">공시 건수</option>
+          <option value="increaseCount">증가 건수</option>
+          <option value="decreaseCount">감소 건수</option>
+          <option value="absDeltaShares">변동 수량</option>
+        </select>
+        <button id="downloadJson" type="button">JSON</button>
+      </div>
+    </div>
+  </header>
+  <main class="wrap">
+    <section class="kpis" id="kpis"></section>
+    <div class="grid">
+      <section class="section">
+        <div class="section-title">
+          <h2>2025 일일 변동 흐름</h2>
+          <span class="hint">공시일 기준 집계</span>
+        </div>
+        <div class="chart-surface"><div class="chart" id="trendChart"></div></div>
+        <div class="split">
+          <div>
+            <div class="section-title"><h2>2024 평가액 상위</h2><span class="hint">억원</span></div>
+            <div class="table-surface"><table id="baselineTable"></table></div>
+          </div>
+          <div>
+            <div class="section-title"><h2>최신 지분율 상위</h2><span class="hint">공시 기반</span></div>
+            <div class="table-surface"><table id="snapshotTable"></table></div>
+          </div>
+        </div>
+      </section>
+      <aside class="section">
+        <div class="section-title"><h2>큰 변동</h2><span class="hint">절대 증감수량</span></div>
+        <div class="table-surface"><div class="mini-bars" id="changeBars"></div></div>
+        <div class="section-title" style="margin-top:14px"><h2>2024 대비 지분율</h2><span class="hint">%p</span></div>
+        <div class="table-surface"><div class="mini-bars" id="ownershipBars"></div></div>
+      </aside>
+    </div>
+    <section class="section">
+      <div class="tabs">
+        <button class="tab" data-table="events" aria-pressed="true" type="button">최근 이벤트</button>
+        <button class="tab" data-table="sectors" aria-pressed="false" type="button">섹터 요약</button>
+      </div>
+      <div class="table-surface"><table id="detailTable"></table></div>
+    </section>
+  </main>
+  <script>
+    const DASHBOARD_DATA = {"meta":{"title":"국민연금 국내주식 변동 대시보드","asOfDate":"2025-12-31","basisType":"disclosure_date","basisLabel":"공시일 기준","baselineYear":"2024","generatedAt":"2026-04-25 07:01"},"kpis":[{"label":"2024년 말 종목","value":"1,200","detail":"기준 엑셀 전체 행"},{"label":"평가액 합계","value":"138.0조원","detail":"기준 엑셀 평가액"},{"label":"2025 변동 공시","value":"780","detail":"최근 공시일 2025-12-22"},{"label":"변동 종목","value":"283","detail":"증가 451 / 감소 329"},{"label":"최신 추적 종목","value":"283","detail":"공시 기반 5% 이상"},{"label":"2024 대비 매칭","value":"257","detail":"종목명 기준 비교"}],"baselineTop":[{"rank":1,"companyName":"삼성전자","marketValue":230420.98646,"assetWeight":0.16696004508703738,"ownership":0.0726},{"rank":2,"companyName":"SK하이닉스","marketValue":95626.575295,"assetWeight":0.06928977072817005,"ownership":0.07550000000000001},{"rank":3,"companyName":"LG에너지솔루션","marketValue":51706.40028,"assetWeight":0.03746578406188637,"ownership":0.0635},{"rank":4,"companyName":"삼성바이오로직스","marketValue":46721.38627,"assetWeight":0.033853707850184205,"ownership":0.0692},{"rank":5,"companyName":"현대차","marketValue":33529.178,"assetWeight":0.024294805593079494,"ownership":0.0755},{"rank":6,"companyName":"기아","marketValue":28589.005918,"assetWeight":0.02071522125824883,"ownership":0.0714},{"rank":7,"companyName":"NAVER","marketValue":28133.931618,"assetWeight":0.020385480348736926,"ownership":0.08940000000000001},{"rank":8,"companyName":"셀트리온","marketValue":27623.68875,"assetWeight":0.02001576501353499,"ownership":0.0679},{"rank":9,"companyName":"KB금융","marketValue":27405.335674,"assetWeight":0.019857549219158197,"ownership":0.08399999999999999},{"rank":10,"companyName":"신한지주","marketValue":20546.6299675,"assetWeight":0.014887820412816378,"ownership":0.08559999999999998},{"rank":11,"companyName":"현대모비스","marketValue":19937.094265,"assetWeight":0.014446158783226809,"ownership":0.09059999999999999},{"rank":12,"companyName":"HD현대중공업","marketValue":16836.940125,"assetWeight":0.01219982747919423,"ownership":0.066},{"rank":13,"companyName":"POSCO홀딩스","marketValue":15627.922635,"assetWeight":0.011323789155851409,"ownership":0.0746},{"rank":14,"companyName":"하나금융지주","marketValue":15080.711832,"assetWeight":0.010927287336530998,"ownership":0.0925},{"rank":15,"companyName":"삼성물산","marketValue":14851.65304,"assetWeight":0.010761314319804323,"ownership":0.0728},{"rank":16,"companyName":"LG화학","marketValue":14546.17,"assetWeight":0.010539965288558077,"ownership":0.0825},{"rank":17,"companyName":"삼성생명","marketValue":13400.10324,"assetWeight":0.009709540244111999,"ownership":0.0707},{"rank":18,"companyName":"메리츠금융지주","marketValue":13179.53208,"assetWeight":0.00954971725496386,"ownership":0.0665},{"rank":19,"companyName":"삼성SDI","marketValue":12598.306875,"assetWeight":0.009128569043060997,"ownership":0.0741},{"rank":20,"companyName":"삼성화재","marketValue":11794.008285,"assetWeight":0.008545784762371564,"ownership":0.0694}],"snapshotTop":[{"companyName":"에이치디현대인프라코어","ticker":"042670","estimatedShares":25547021.0,"ownership":0.1353,"lastDeltaShares":582153.0,"lastChangeReason":"임원ㆍ주요주주 소유보고","lastDisclosedAt":"2025-10-01","sectorName":"미분류"},{"companyName":"삼성증권","ticker":"016360","estimatedShares":12016297.0,"ownership":0.1346,"lastDeltaShares":-109627.0,"lastChangeReason":"임원ㆍ주요주주 소유보고","lastDisclosedAt":"2025-10-01","sectorName":"미분류"},{"companyName":"HD건설기계","ticker":"267270","estimatedShares":2335480.0,"ownership":0.1346,"lastDeltaShares":469865.0,"lastChangeReason":"임원ㆍ주요주주 소유보고","lastDisclosedAt":"2025-10-01","sectorName":"미분류"},{"companyName":"코스맥스","ticker":"192820","estimatedShares":1516927.0,"ownership":0.13369999999999999,"lastDeltaShares":9008.0,"lastChangeReason":"임원ㆍ주요주주 소유보고","lastDisclosedAt":"2025-10-01","sectorName":"미분류"},{"companyName":"LS","ticker":"006260","estimatedShares":4219301.0,"ownership":0.1331,"lastDeltaShares":52487.0,"lastChangeReason":"임원ㆍ주요주주 소유보고","lastDisclosedAt":"2025-10-01","sectorName":"미분류"},{"companyName":"현대백화점","ticker":"069960","estimatedShares":2980375.0,"ownership":0.1317,"lastDeltaShares":9220.0,"lastChangeReason":"임원ㆍ주요주주 소유보고","lastDisclosedAt":"2025-10-01","sectorName":"미분류"},{"companyName":"한솔케미칼","ticker":"014680","estimatedShares":1475805.0,"ownership":0.13019999999999998,"lastDeltaShares":18559.0,"lastChangeReason":"임원ㆍ주요주주 소유보고","lastDisclosedAt":"2025-12-01","sectorName":"미분류"},{"companyName":"대덕전자","ticker":"353200","estimatedShares":6610211.0,"ownership":0.1283,"lastDeltaShares":1649649.0,"lastChangeReason":"임원ㆍ주요주주 소유보고","lastDisclosedAt":"2025-10-01","sectorName":"미분류"},{"companyName":"신세계","ticker":"004170","estimatedShares":1215108.0,"ownership":0.126,"lastDeltaShares":-89119.0,"lastChangeReason":"임원ㆍ주요주주 소유보고","lastDisclosedAt":"2025-10-01","sectorName":"미분류"},{"companyName":"대상","ticker":"001680","estimatedShares":4517530.0,"ownership":0.12539999999999998,"lastDeltaShares":-38411.0,"lastChangeReason":"임원ㆍ주요주주 소유보고","lastDisclosedAt":"2025-10-01","sectorName":"미분류"},{"companyName":"한국금융지주","ticker":"071050","estimatedShares":7596999.0,"ownership":0.1234,"lastDeltaShares":-128162.0,"lastChangeReason":"임원ㆍ주요주주 소유보고","lastDisclosedAt":"2025-10-01","sectorName":"미분류"},{"companyName":"코스메카코리아","ticker":"241710","estimatedShares":1274045.0,"ownership":0.1193,"lastDeltaShares":109717.0,"lastChangeReason":"임원ㆍ주요주주 소유보고","lastDisclosedAt":"2025-10-01","sectorName":"미분류"},{"companyName":"세아제강지주","ticker":"003030","estimatedShares":493498.0,"ownership":0.1192,"lastDeltaShares":-24825.0,"lastChangeReason":"임원ㆍ주요주주 소유보고","lastDisclosedAt":"2025-10-01","sectorName":"미분류"},{"companyName":"케이씨씨","ticker":"002380","estimatedShares":1045301.0,"ownership":0.1176,"lastDeltaShares":-72102.0,"lastChangeReason":"임원ㆍ주요주주 소유보고","lastDisclosedAt":"2025-10-01","sectorName":"미분류"},{"companyName":"한미약품","ticker":"128940","estimatedShares":1502362.0,"ownership":0.1173,"lastDeltaShares":57311.0,"lastChangeReason":"임원ㆍ주요주주 소유보고","lastDisclosedAt":"2025-12-01","sectorName":"미분류"},{"companyName":"이수페타시스","ticker":"007660","estimatedShares":8442138.0,"ownership":0.115,"lastDeltaShares":-1002863.0,"lastChangeReason":"임원ㆍ주요주주 소유보고","lastDisclosedAt":"2025-10-01","sectorName":"미분류"},{"companyName":"키움증권","ticker":"039490","estimatedShares":3077766.0,"ownership":0.1128,"lastDeltaShares":-166146.0,"lastChangeReason":"임원ㆍ주요주주 소유보고","lastDisclosedAt":"2025-10-01","sectorName":"미분류"},{"companyName":"동아쏘시오홀딩스","ticker":"000640","estimatedShares":718379.0,"ownership":0.1099,"lastDeltaShares":47038.0,"lastChangeReason":"임원ㆍ주요주주 소유보고","lastDisclosedAt":"2025-10-01","sectorName":"미분류"},{"companyName":"한전기술","ticker":"052690","estimatedShares":4160187.0,"ownership":0.10880000000000001,"lastDeltaShares":270492.0,"lastChangeReason":"임원ㆍ주요주주 소유보고","lastDisclosedAt":"2025-10-01","sectorName":"미분류"},{"companyName":"CJ","ticker":"001040","estimatedShares":3863153.0,"ownership":0.10830000000000001,"lastDeltaShares":-156363.0,"lastChangeReason":"임원ㆍ주요주주 소유보고","lastDisclosedAt":"2025-10-01","sectorName":"미분류"}],"ownershipChanges":[{"companyName":"한국금융지주","ticker":"071050","baselineOwnership":0.0036,"currentOwnership":0.1234,"ownershipDiff":0.11979999999999999,"baselineRank":783},{"companyName":"CJ","ticker":"001040","baselineOwnership":0.0018,"currentOwnership":0.10830000000000001,"ownershipDiff":0.10650000000000001,"baselineRank":1027},{"companyName":"현대건설","ticker":"000720","baselineOwnership":0.0027,"currentOwnership":0.09970000000000001,"ownershipDiff":0.09700000000000002,"baselineRank":1090},{"companyName":"대한항공","ticker":"003490","baselineOwnership":0.0032,"currentOwnership":0.0901,"ownershipDiff":0.0869,"baselineRank":1123},{"companyName":"DL","ticker":"000210","baselineOwnership":0.0148,"currentOwnership":0.1005,"ownershipDiff":0.0857,"baselineRank":929},{"companyName":"NH투자증권","ticker":"005940","baselineOwnership":0.0060999999999999995,"currentOwnership":0.0836,"ownershipDiff":0.0775,"baselineRank":736},{"companyName":"삼성전기","ticker":"009150","baselineOwnership":0.0301,"currentOwnership":0.1052,"ownershipDiff":0.0751,"baselineRank":509},{"companyName":"SK케미칼","ticker":"285130","baselineOwnership":0.010700000000000001,"currentOwnership":0.0852,"ownershipDiff":0.0745,"baselineRank":947},{"companyName":"STX엔진","ticker":"077970","baselineOwnership":0.1119,"currentOwnership":0.0394,"ownershipDiff":-0.07250000000000001,"baselineRank":227},{"companyName":"두산","ticker":"000150","baselineOwnership":0.006,"currentOwnership":0.07719999999999999,"ownershipDiff":0.07119999999999999,"baselineRank":620},{"companyName":"LG화학","ticker":"051910","baselineOwnership":0.017,"currentOwnership":0.0864,"ownershipDiff":0.0694,"baselineRank":333},{"companyName":"DL이앤씨","ticker":"375500","baselineOwnership":0.0226,"currentOwnership":0.0913,"ownershipDiff":0.06870000000000001,"baselineRank":854},{"companyName":"엠앤씨솔루션","ticker":"484870","baselineOwnership":0.015,"currentOwnership":0.0834,"ownershipDiff":0.0684,"baselineRank":484},{"companyName":"KB발해인프라","ticker":"415640","baselineOwnership":0.011699999999999999,"currentOwnership":0.0797,"ownershipDiff":0.06799999999999999,"baselineRank":397},{"companyName":"삼성SDI","ticker":"006400","baselineOwnership":0.0019,"currentOwnership":0.0687,"ownershipDiff":0.0668,"baselineRank":943},{"companyName":"미래에셋증권","ticker":"006800","baselineOwnership":0.0053,"currentOwnership":0.07150000000000001,"ownershipDiff":0.06620000000000001,"baselineRank":996},{"companyName":"코오롱인더","ticker":"120110","baselineOwnership":0.0017000000000000001,"currentOwnership":0.06709999999999999,"ownershipDiff":0.06539999999999999,"baselineRank":1120},{"companyName":"한국카본","ticker":"017960","baselineOwnership":0.038,"currentOwnership":0.0987,"ownershipDiff":0.0607,"baselineRank":317},{"companyName":"대신증권","ticker":"003540","baselineOwnership":0.0023,"currentOwnership":0.0605,"ownershipDiff":0.0582,"baselineRank":826},{"companyName":"SNT다이내믹스","ticker":"003570","baselineOwnership":0.0246,"currentOwnership":0.08199999999999999,"ownershipDiff":0.05739999999999999,"baselineRank":364}],"dailySeries":[{"date":"2025-01-03","eventCount":6,"increaseCount":5,"decreaseCount":1,"netDeltaShares":4606001.0,"absDeltaShares":22137939.0},{"date":"2025-01-06","eventCount":81,"increaseCount":48,"decreaseCount":33,"netDeltaShares":26590206.0,"absDeltaShares":54691982.0},{"date":"2025-01-07","eventCount":24,"increaseCount":18,"decreaseCount":6,"netDeltaShares":3467564.0,"absDeltaShares":5296344.0},{"date":"2025-01-08","eventCount":10,"increaseCount":10,"decreaseCount":0,"netDeltaShares":14117543.0,"absDeltaShares":14117543.0},{"date":"2025-01-10","eventCount":3,"increaseCount":1,"decreaseCount":2,"netDeltaShares":4396028.0,"absDeltaShares":4472772.0},{"date":"2025-01-16","eventCount":1,"increaseCount":1,"decreaseCount":0,"netDeltaShares":7510906.0,"absDeltaShares":7510906.0},{"date":"2025-01-23","eventCount":1,"increaseCount":0,"decreaseCount":1,"netDeltaShares":-172371.0,"absDeltaShares":172371.0},{"date":"2025-02-03","eventCount":4,"increaseCount":2,"decreaseCount":2,"netDeltaShares":-1728409.0,"absDeltaShares":1755785.0},{"date":"2025-02-04","eventCount":7,"increaseCount":3,"decreaseCount":4,"netDeltaShares":-1429701.0,"absDeltaShares":1792509.0},{"date":"2025-02-06","eventCount":2,"increaseCount":2,"decreaseCount":0,"netDeltaShares":5323853.0,"absDeltaShares":5323853.0},{"date":"2025-02-12","eventCount":2,"increaseCount":1,"decreaseCount":1,"netDeltaShares":2215391.0,"absDeltaShares":2236341.0},{"date":"2025-02-13","eventCount":1,"increaseCount":1,"decreaseCount":0,"netDeltaShares":1287458.0,"absDeltaShares":1287458.0},{"date":"2025-02-17","eventCount":3,"increaseCount":3,"decreaseCount":0,"netDeltaShares":7812472.0,"absDeltaShares":7812472.0},{"date":"2025-02-21","eventCount":8,"increaseCount":4,"decreaseCount":4,"netDeltaShares":974773.0,"absDeltaShares":5048265.0},{"date":"2025-02-24","eventCount":1,"increaseCount":1,"decreaseCount":0,"netDeltaShares":1169768.0,"absDeltaShares":1169768.0},{"date":"2025-02-26","eventCount":2,"increaseCount":1,"decreaseCount":1,"netDeltaShares":6387960.0,"absDeltaShares":6401980.0},{"date":"2025-02-28","eventCount":1,"increaseCount":1,"decreaseCount":0,"netDeltaShares":3901655.0,"absDeltaShares":3901655.0},{"date":"2025-03-04","eventCount":5,"increaseCount":5,"decreaseCount":0,"netDeltaShares":1341833.0,"absDeltaShares":1341833.0},{"date":"2025-03-05","eventCount":6,"increaseCount":5,"decreaseCount":1,"netDeltaShares":604886.0,"absDeltaShares":1736242.0},{"date":"2025-03-07","eventCount":1,"increaseCount":0,"decreaseCount":1,"netDeltaShares":-154467.0,"absDeltaShares":154467.0},{"date":"2025-03-11","eventCount":1,"increaseCount":1,"decreaseCount":0,"netDeltaShares":714245.0,"absDeltaShares":714245.0},{"date":"2025-03-14","eventCount":1,"increaseCount":1,"decreaseCount":0,"netDeltaShares":1831990.0,"absDeltaShares":1831990.0},{"date":"2025-03-17","eventCount":1,"increaseCount":0,"decreaseCount":1,"netDeltaShares":-4000.0,"absDeltaShares":4000.0},{"date":"2025-03-18","eventCount":1,"increaseCount":0,"decreaseCount":1,"netDeltaShares":-16639.0,"absDeltaShares":16639.0},{"date":"2025-03-19","eventCount":8,"increaseCount":4,"decreaseCount":4,"netDeltaShares":2279833.0,"absDeltaShares":5102607.0},{"date":"2025-03-24","eventCount":1,"increaseCount":0,"decreaseCount":1,"netDeltaShares":-70937.0,"absDeltaShares":70937.0},{"date":"2025-03-25","eventCount":2,"increaseCount":2,"decreaseCount":0,"netDeltaShares":4216589.0,"absDeltaShares":4216589.0},{"date":"2025-03-28","eventCount":4,"increaseCount":0,"decreaseCount":4,"netDeltaShares":-812115.0,"absDeltaShares":812115.0},{"date":"2025-03-31","eventCount":1,"increaseCount":1,"decreaseCount":0,"netDeltaShares":1041807.0,"absDeltaShares":1041807.0},{"date":"2025-04-01","eventCount":108,"increaseCount":68,"decreaseCount":40,"netDeltaShares":63322590.0,"absDeltaShares":92092220.0},{"date":"2025-04-02","eventCount":36,"increaseCount":24,"decreaseCount":12,"netDeltaShares":7420519.0,"absDeltaShares":13235349.0},{"date":"2025-04-03","eventCount":1,"increaseCount":1,"decreaseCount":0,"netDeltaShares":2309880.0,"absDeltaShares":2309880.0},{"date":"2025-04-10","eventCount":2,"increaseCount":1,"decreaseCount":1,"netDeltaShares":2128170.0,"absDeltaShares":2273086.0},{"date":"2025-04-14","eventCount":1,"increaseCount":1,"decreaseCount":0,"netDeltaShares":11140401.0,"absDeltaShares":11140401.0},{"date":"2025-04-24","eventCount":2,"increaseCount":2,"decreaseCount":0,"netDeltaShares":1872526.0,"absDeltaShares":1872526.0},{"date":"2025-05-02","eventCount":9,"increaseCount":7,"decreaseCount":2,"netDeltaShares":5430979.0,"absDeltaShares":5917483.0},{"date":"2025-05-19","eventCount":1,"increaseCount":0,"decreaseCount":1,"netDeltaShares":-3442.0,"absDeltaShares":3442.0},{"date":"2025-05-23","eventCount":2,"increaseCount":1,"decreaseCount":1,"netDeltaShares":2179001.0,"absDeltaShares":2223565.0},{"date":"2025-05-26","eventCount":1,"increaseCount":0,"decreaseCount":1,"netDeltaShares":-4003.0,"absDeltaShares":4003.0},{"date":"2025-05-28","eventCount":3,"increaseCount":2,"decreaseCount":1,"netDeltaShares":2452950.0,"absDeltaShares":2884274.0},{"date":"2025-05-30","eventCount":2,"increaseCount":2,"decreaseCount":0,"netDeltaShares":9665138.0,"absDeltaShares":9665138.0},{"date":"2025-06-02","eventCount":9,"increaseCount":8,"decreaseCount":1,"netDeltaShares":8986676.0,"absDeltaShares":9134578.0},{"date":"2025-06-05","eventCount":2,"increaseCount":1,"decreaseCount":1,"netDeltaShares":653296.0,"absDeltaShares":657412.0},{"date":"2025-06-11","eventCount":1,"increaseCount":1,"decreaseCount":0,"netDeltaShares":13385960.0,"absDeltaShares":13385960.0},{"date":"2025-06-18","eventCount":1,"increaseCount":0,"decreaseCount":1,"netDeltaShares":-1988306.0,"absDeltaShares":1988306.0},{"date":"2025-06-24","eventCount":4,"increaseCount":2,"decreaseCount":2,"netDeltaShares":4279986.0,"absDeltaShares":4923832.0},{"date":"2025-06-26","eventCount":2,"increaseCount":2,"decreaseCount":0,"netDeltaShares":4442907.0,"absDeltaShares":4442907.0},{"date":"2025-06-27","eventCount":1,"increaseCount":0,"decreaseCount":1,"netDeltaShares":-1922.0,"absDeltaShares":1922.0},{"date":"2025-07-01","eventCount":4,"increaseCount":2,"decreaseCount":2,"netDeltaShares":3218446.0,"absDeltaShares":5086120.0},{"date":"2025-07-02","eventCount":114,"increaseCount":69,"decreaseCount":45,"netDeltaShares":15951344.0,"absDeltaShares":71091236.0},{"date":"2025-07-03","eventCount":36,"increaseCount":24,"decreaseCount":12,"netDeltaShares":5588526.0,"absDeltaShares":10311532.0},{"date":"2025-07-10","eventCount":1,"increaseCount":1,"decreaseCount":0,"netDeltaShares":1601791.0,"absDeltaShares":1601791.0},{"date":"2025-07-16","eventCount":4,"increaseCount":2,"decreaseCount":2,"netDeltaShares":12941846.0,"absDeltaShares":14121628.0},{"date":"2025-07-23","eventCount":1,"increaseCount":0,"decreaseCount":1,"netDeltaShares":-47553.0,"absDeltaShares":47553.0},{"date":"2025-07-25","eventCount":3,"increaseCount":2,"decreaseCount":1,"netDeltaShares":13529117.0,"absDeltaShares":13542771.0},{"date":"2025-08-01","eventCount":8,"increaseCount":2,"decreaseCount":6,"netDeltaShares":3083749.0,"absDeltaShares":9317485.0},{"date":"2025-08-11","eventCount":2,"increaseCount":0,"decreaseCount":2,"netDeltaShares":-135835.0,"absDeltaShares":135835.0},{"date":"2025-08-13","eventCount":1,"increaseCount":1,"decreaseCount":0,"netDeltaShares":7505119.0,"absDeltaShares":7505119.0},{"date":"2025-08-14","eventCount":1,"increaseCount":0,"decreaseCount":1,"netDeltaShares":-15819.0,"absDeltaShares":15819.0},{"date":"2025-08-20","eventCount":2,"increaseCount":1,"decreaseCount":1,"netDeltaShares":7374187.0,"absDeltaShares":7679179.0},{"date":"2025-08-27","eventCount":8,"increaseCount":5,"decreaseCount":3,"netDeltaShares":7588514.0,"absDeltaShares":10220200.0},{"date":"2025-09-01","eventCount":12,"increaseCount":2,"decreaseCount":10,"netDeltaShares":-1022580.0,"absDeltaShares":6748978.0},{"date":"2025-09-05","eventCount":2,"increaseCount":0,"decreaseCount":2,"netDeltaShares":-1022709.0,"absDeltaShares":1022709.0},{"date":"2025-09-09","eventCount":1,"increaseCount":0,"decreaseCount":1,"netDeltaShares":-739947.0,"absDeltaShares":739947.0},{"date":"2025-09-15","eventCount":2,"increaseCount":1,"decreaseCount":1,"netDeltaShares":1745722.0,"absDeltaShares":2076170.0},{"date":"2025-09-18","eventCount":1,"increaseCount":1,"decreaseCount":0,"netDeltaShares":4014397.0,"absDeltaShares":4014397.0},{"date":"2025-09-24","eventCount":3,"increaseCount":0,"decreaseCount":3,"netDeltaShares":-189882.0,"absDeltaShares":189882.0},{"date":"2025-09-30","eventCount":3,"increaseCount":0,"decreaseCount":3,"netDeltaShares":-750237.0,"absDeltaShares":750237.0},{"date":"2025-10-01","eventCount":147,"increaseCount":72,"decreaseCount":75,"netDeltaShares":8344124.0,"absDeltaShares":80047620.0},{"date":"2025-10-10","eventCount":1,"increaseCount":0,"decreaseCount":1,"netDeltaShares":-414949.0,"absDeltaShares":414949.0},{"date":"2025-10-14","eventCount":4,"increaseCount":2,"decreaseCount":2,"netDeltaShares":5670063.0,"absDeltaShares":6024377.0},{"date":"2025-10-17","eventCount":2,"increaseCount":1,"decreaseCount":1,"netDeltaShares":11205661.0,"absDeltaShares":11209913.0},{"date":"2025-10-20","eventCount":1,"increaseCount":1,"decreaseCount":0,"netDeltaShares":650174.0,"absDeltaShares":650174.0},{"date":"2025-10-23","eventCount":3,"increaseCount":2,"decreaseCount":1,"netDeltaShares":5349196.0,"absDeltaShares":5354014.0},{"date":"2025-10-29","eventCount":4,"increaseCount":1,"decreaseCount":3,"netDeltaShares":10183625.0,"absDeltaShares":12850693.0},{"date":"2025-11-03","eventCount":6,"increaseCount":1,"decreaseCount":5,"netDeltaShares":-421440.0,"absDeltaShares":583886.0},{"date":"2025-11-12","eventCount":2,"increaseCount":1,"decreaseCount":1,"netDeltaShares":7555350.0,"absDeltaShares":7953720.0},{"date":"2025-11-17","eventCount":2,"increaseCount":2,"decreaseCount":0,"netDeltaShares":12777706.0,"absDeltaShares":12777706.0},{"date":"2025-11-19","eventCount":4,"increaseCount":1,"decreaseCount":3,"netDeltaShares":-1333798.0,"absDeltaShares":1492524.0},{"date":"2025-11-24","eventCount":1,"increaseCount":0,"decreaseCount":1,"netDeltaShares":-72677.0,"absDeltaShares":72677.0},{"date":"2025-11-27","eventCount":1,"increaseCount":1,"decreaseCount":0,"netDeltaShares":2283103.0,"absDeltaShares":2283103.0},{"date":"2025-12-01","eventCount":6,"increaseCount":2,"decreaseCount":4,"netDeltaShares":-1633112.0,"absDeltaShares":1784852.0},{"date":"2025-12-04","eventCount":2,"increaseCount":1,"decreaseCount":1,"netDeltaShares":305104.0,"absDeltaShares":8588962.0},{"date":"2025-12-09","eventCount":3,"increaseCount":2,"decreaseCount":1,"netDeltaShares":4014917.0,"absDeltaShares":4061799.0},{"date":"2025-12-16","eventCount":1,"increaseCount":1,"decreaseCount":0,"netDeltaShares":3920394.0,"absDeltaShares":3920394.0},{"date":"2025-12-22","eventCount":4,"increaseCount":3,"decreaseCount":1,"netDeltaShares":19111092.0,"absDeltaShares":19127412.0}],"largestChanges":[{"companyName":"HMM","ticker":"011200","effectiveDate":"","disclosedAt":"2025-04-01","deltaShares":18538947.0,"sharesAfter":52995929.0,"ownershipAfter":0.0602,"changeReason":"단순추가취득/처분","eventType":"buy"},{"companyName":"현대제철","ticker":"004020","effectiveDate":"","disclosedAt":"2025-06-11","deltaShares":13385960.0,"sharesAfter":13385960.0,"ownershipAfter":0.1003,"changeReason":"임원ㆍ주요주주 소유보고","eventType":"buy"},{"companyName":"제일기획","ticker":"030000","effectiveDate":"","disclosedAt":"2025-11-17","deltaShares":11602537.0,"sharesAfter":11602537.0,"ownershipAfter":0.1009,"changeReason":"임원ㆍ주요주주 소유보고","eventType":"buy"},{"companyName":"제일기획","ticker":"030000","effectiveDate":"","disclosedAt":"2025-10-29","deltaShares":11517159.0,"sharesAfter":11517159.0,"ownershipAfter":0.1001,"changeReason":"임원ㆍ주요주주 소유보고","eventType":"buy"},{"companyName":"현대건설","ticker":"000720","effectiveDate":"","disclosedAt":"2025-10-17","deltaShares":11207787.0,"sharesAfter":11207787.0,"ownershipAfter":0.09970000000000001,"changeReason":"임원ㆍ주요주주 소유보고","eventType":"buy"},{"companyName":"현대건설","ticker":"000720","effectiveDate":"","disclosedAt":"2025-04-14","deltaShares":11140401.0,"sharesAfter":11140401.0,"ownershipAfter":0.09910000000000001,"changeReason":"임원ㆍ주요주주 소유보고","eventType":"buy"},{"companyName":"KB발해인프라","ticker":"415640","effectiveDate":"","disclosedAt":"2025-01-06","deltaShares":9770686.0,"sharesAfter":9770686.0,"ownershipAfter":0.0797,"changeReason":"보유주식의 유가증권시장 상장 및 단순추가취득/처분","eventType":"buy"},{"companyName":"대한해운","ticker":"005880","effectiveDate":"","disclosedAt":"2025-07-02","deltaShares":-9645912.0,"sharesAfter":9675236.0,"ownershipAfter":0.03,"changeReason":"단순추가취득/처분","eventType":"buy"},{"companyName":"한화생명","ticker":"088350","effectiveDate":"","disclosedAt":"2025-01-03","deltaShares":-8765969.0,"sharesAfter":46310599.0,"ownershipAfter":0.0533,"changeReason":"단순추가취득/처분","eventType":"buy"},{"companyName":"GS건설","ticker":"006360","effectiveDate":"","disclosedAt":"2025-05-30","deltaShares":8570949.0,"sharesAfter":8570949.0,"ownershipAfter":0.1001,"changeReason":"임원ㆍ주요주주 소유보고","eventType":"buy"},{"companyName":"HMM","ticker":"011200","effectiveDate":"","disclosedAt":"2025-08-27","deltaShares":8425089.0,"sharesAfter":61421018.0,"ownershipAfter":0.0599,"changeReason":"단순투자목적에서 일반투자목적으로 보유목적 변경","eventType":"buy"},{"companyName":"롯데관광개발","ticker":"032350","effectiveDate":"","disclosedAt":"2025-12-22","deltaShares":7988162.0,"sharesAfter":7988162.0,"ownershipAfter":0.10039999999999999,"changeReason":"임원ㆍ주요주주 소유보고","eventType":"buy"},{"companyName":"삼성에스디에스","ticker":"018260","effectiveDate":"","disclosedAt":"2025-11-12","deltaShares":7754535.0,"sharesAfter":7754535.0,"ownershipAfter":0.1002,"changeReason":"임원ㆍ주요주주 소유보고","eventType":"buy"},{"companyName":"삼성전기","ticker":"009150","effectiveDate":"","disclosedAt":"2025-01-03","deltaShares":7575485.0,"sharesAfter":7575485.0,"ownershipAfter":0.09759999999999999,"changeReason":"임원ㆍ주요주주 소유보고","eventType":"buy"},{"companyName":"현대글로비스","ticker":"086280","effectiveDate":"","disclosedAt":"2025-08-20","deltaShares":7526683.0,"sharesAfter":7526683.0,"ownershipAfter":0.10039999999999999,"changeReason":"임원ㆍ주요주주 소유보고","eventType":"buy"},{"companyName":"현대글로비스","ticker":"086280","effectiveDate":"","disclosedAt":"2025-01-16","deltaShares":7510906.0,"sharesAfter":7510906.0,"ownershipAfter":0.1001,"changeReason":"임원ㆍ주요주주 소유보고","eventType":"buy"},{"companyName":"현대글로비스","ticker":"086280","effectiveDate":"","disclosedAt":"2025-08-13","deltaShares":7505119.0,"sharesAfter":7505119.0,"ownershipAfter":0.1001,"changeReason":"임원ㆍ주요주주 소유보고","eventType":"buy"},{"companyName":"현대글로비스","ticker":"086280","effectiveDate":"","disclosedAt":"2025-07-16","deltaShares":7504626.0,"sharesAfter":7504626.0,"ownershipAfter":0.1001,"changeReason":"임원ㆍ주요주주 소유보고","eventType":"buy"},{"companyName":"현대글로비스","ticker":"086280","effectiveDate":"","disclosedAt":"2025-07-25","deltaShares":7503665.0,"sharesAfter":7503665.0,"ownershipAfter":0.1,"changeReason":"임원ㆍ주요주주 소유보고","eventType":"buy"},{"companyName":"현대글로비스","ticker":"086280","effectiveDate":"","disclosedAt":"2025-01-08","deltaShares":7503644.0,"sharesAfter":7503644.0,"ownershipAfter":0.1,"changeReason":"임원ㆍ주요주주 소유보고","eventType":"buy"}],"latestEvents":[{"companyName":"롯데관광개발","ticker":"032350","effectiveDate":"","disclosedAt":"2025-12-22","deltaShares":7988162.0,"sharesAfter":7988162.0,"ownershipAfter":0.10039999999999999,"changeReason":"임원ㆍ주요주주 소유보고","eventType":"buy"},{"companyName":"영원무역","ticker":"111770","effectiveDate":"","disclosedAt":"2025-12-22","deltaShares":4436985.0,"sharesAfter":4436985.0,"ownershipAfter":0.1001,"changeReason":"임원ㆍ주요주주 소유보고","eventType":"buy"},{"companyName":"IPARK현대산업개발","ticker":"294870","effectiveDate":"","disclosedAt":"2025-12-22","deltaShares":6694105.0,"sharesAfter":6694105.0,"ownershipAfter":0.1016,"changeReason":"임원ㆍ주요주주 소유보고","eventType":"buy"},{"companyName":"두산","ticker":"000150","effectiveDate":"","disclosedAt":"2025-12-22","deltaShares":-8160.0,"sharesAfter":1627029.0,"ownershipAfter":0.07719999999999999,"changeReason":"임원ㆍ주요주주 소유보고","eventType":"sell"},{"companyName":"현대엘리베이터","ticker":"017800","effectiveDate":"","disclosedAt":"2025-12-16","deltaShares":3920394.0,"sharesAfter":3920394.0,"ownershipAfter":0.1003,"changeReason":"임원ㆍ주요주주 소유보고","eventType":"buy"},{"companyName":"두산","ticker":"000150","effectiveDate":"","disclosedAt":"2025-12-09","deltaShares":1635189.0,"sharesAfter":1635189.0,"ownershipAfter":0.0776,"changeReason":"임원ㆍ주요주주 소유보고","eventType":"buy"},{"companyName":"영원무역","ticker":"111770","effectiveDate":"","disclosedAt":"2025-12-09","deltaShares":-23441.0,"sharesAfter":4423592.0,"ownershipAfter":0.0998,"changeReason":"임원ㆍ주요주주 소유보고","eventType":"sell"},{"companyName":"LG이노텍","ticker":"011070","effectiveDate":"","disclosedAt":"2025-12-09","deltaShares":2403169.0,"sharesAfter":2403169.0,"ownershipAfter":0.1015,"changeReason":"임원ㆍ주요주주 소유보고","eventType":"buy"},{"companyName":"영원무역","ticker":"111770","effectiveDate":"","disclosedAt":"2025-12-04","deltaShares":4447033.0,"sharesAfter":4447033.0,"ownershipAfter":0.10039999999999999,"changeReason":"임원ㆍ주요주주 소유보고","eventType":"buy"},{"companyName":"에이치디현대미포","ticker":"010620","effectiveDate":"","disclosedAt":"2025-12-04","deltaShares":-4141929.0,"sharesAfter":0.0,"ownershipAfter":0.0,"changeReason":"임원ㆍ주요주주 소유보고","eventType":"sell"},{"companyName":"CJ대한통운","ticker":"000120","effectiveDate":"","disclosedAt":"2025-12-01","deltaShares":-901.0,"sharesAfter":2282202.0,"ownershipAfter":0.1,"changeReason":"임원ㆍ주요주주 소유보고","eventType":"sell"},{"companyName":"한솔케미칼","ticker":"014680","effectiveDate":"","disclosedAt":"2025-12-01","deltaShares":18559.0,"sharesAfter":1475805.0,"ownershipAfter":0.13019999999999998,"changeReason":"임원ㆍ주요주주 소유보고","eventType":"buy"},{"companyName":"한미약품","ticker":"128940","effectiveDate":"","disclosedAt":"2025-12-01","deltaShares":57311.0,"sharesAfter":1502362.0,"ownershipAfter":0.1173,"changeReason":"임원ㆍ주요주주 소유보고","eventType":"buy"},{"companyName":"하이트진로","ticker":"000080","effectiveDate":"","disclosedAt":"2025-12-01","deltaShares":-708984.0,"sharesAfter":3510133.0,"ownershipAfter":0.05,"changeReason":"단순추가취득/처분","eventType":"buy"},{"companyName":"한화엔진","ticker":"082740","effectiveDate":"","disclosedAt":"2025-12-01","deltaShares":-837469.0,"sharesAfter":8143894.0,"ownershipAfter":0.09759999999999999,"changeReason":"단순추가취득/처분","eventType":"buy"},{"companyName":"케이씨씨글라스","ticker":"344820","effectiveDate":"","disclosedAt":"2025-12-01","deltaShares":-161628.0,"sharesAfter":798524.0,"ownershipAfter":0.05,"changeReason":"단순추가취득/처분","eventType":"buy"},{"companyName":"CJ대한통운","ticker":"000120","effectiveDate":"","disclosedAt":"2025-11-27","deltaShares":2283103.0,"sharesAfter":2283103.0,"ownershipAfter":0.1001,"changeReason":"임원ㆍ주요주주 소유보고","eventType":"buy"},{"companyName":"한국카본","ticker":"017960","effectiveDate":"","disclosedAt":"2025-11-24","deltaShares":-72677.0,"sharesAfter":5123623.0,"ownershipAfter":0.0987,"changeReason":"임원ㆍ주요주주 소유보고","eventType":"sell"},{"companyName":"삼성에스디에스","ticker":"018260","effectiveDate":"","disclosedAt":"2025-11-19","deltaShares":-39645.0,"sharesAfter":7714890.0,"ownershipAfter":0.09970000000000001,"changeReason":"임원ㆍ주요주주 소유보고","eventType":"sell"},{"companyName":"GS건설","ticker":"006360","effectiveDate":"","disclosedAt":"2025-11-19","deltaShares":-522727.0,"sharesAfter":5934492.0,"ownershipAfter":0.0693,"changeReason":"일반투자목적에서 단순투자목적으로 보유목적 변경","eventType":"sell"},{"companyName":"삼성물산","ticker":"028260","effectiveDate":"","disclosedAt":"2025-11-19","deltaShares":79363.0,"sharesAfter":13917421.0,"ownershipAfter":0.0819,"changeReason":"단순투자목적에서 일반투자목적으로 보유목적 변경","eventType":"buy"},{"companyName":"현대제철","ticker":"004020","effectiveDate":"","disclosedAt":"2025-11-19","deltaShares":-850789.0,"sharesAfter":11734306.0,"ownershipAfter":0.08789999999999999,"changeReason":"단순투자목적에서 일반투자목적으로 보유목적 변경","eventType":"sell"},{"companyName":"대웅제약","ticker":"069620","effectiveDate":"","disclosedAt":"2025-11-17","deltaShares":1175169.0,"sharesAfter":1175169.0,"ownershipAfter":0.1014,"changeReason":"임원ㆍ주요주주 소유보고","eventType":"buy"},{"companyName":"제일기획","ticker":"030000","effectiveDate":"","disclosedAt":"2025-11-17","deltaShares":11602537.0,"sharesAfter":11602537.0,"ownershipAfter":0.1009,"changeReason":"임원ㆍ주요주주 소유보고","eventType":"buy"},{"companyName":"삼성에스디에스","ticker":"018260","effectiveDate":"","disclosedAt":"2025-11-12","deltaShares":7754535.0,"sharesAfter":7754535.0,"ownershipAfter":0.1002,"changeReason":"임원ㆍ주요주주 소유보고","eventType":"buy"},{"companyName":"한화엔진","ticker":"082740","effectiveDate":"","disclosedAt":"2025-11-12","deltaShares":-199185.0,"sharesAfter":8329768.0,"ownershipAfter":0.0998,"changeReason":"임원ㆍ주요주주 소유보고","eventType":"sell"},{"companyName":"제일기획","ticker":"030000","effectiveDate":"","disclosedAt":"2025-11-03","deltaShares":-25181.0,"sharesAfter":11491978.0,"ownershipAfter":0.0999,"changeReason":"임원ㆍ주요주주 소유보고","eventType":"sell"},{"companyName":"한솔케미칼","ticker":"014680","effectiveDate":"","disclosedAt":"2025-11-03","deltaShares":-19537.0,"sharesAfter":1457246.0,"ownershipAfter":0.1286,"changeReason":"임원ㆍ주요주주 소유보고","eventType":"sell"},{"companyName":"한화엔진","ticker":"082740","effectiveDate":"","disclosedAt":"2025-11-03","deltaShares":-283907.0,"sharesAfter":8528953.0,"ownershipAfter":0.10220000000000001,"changeReason":"임원ㆍ주요주주 소유보고","eventType":"sell"},{"companyName":"한미약품","ticker":"128940","effectiveDate":"","disclosedAt":"2025-11-03","deltaShares":-836.0,"sharesAfter":1445051.0,"ownershipAfter":0.1128,"changeReason":"임원ㆍ주요주주 소유보고","eventType":"sell"}],"sectorRows":[{"sectorName":"미분류","companyCount":281,"ownershipSum":19.760999999999985,"netDirection":"순매수"},{"sectorName":"자동차","companyCount":1,"ownershipSum":0.1001,"netDirection":"순매수"},{"sectorName":"건설","companyCount":1,"ownershipSum":0.0913,"netDirection":"순매도"}]};
+    const fmt = new Intl.NumberFormat("ko-KR");
+    const pct = (v, digits = 2) => v == null ? "" : `${(v * 100).toFixed(digits)}%`;
+    const pp = v => v == null ? "" : `${(v * 100).toFixed(2)}%p`;
+    const shares = v => v == null ? "" : fmt.format(Math.round(v));
+    const money = v => v == null ? "" : fmt.format(Math.round(v));
+    const signed = v => v == null ? "" : `${v > 0 ? "+" : ""}${shares(v)}`;
+    const cls = v => v > 0 ? "delta-up" : v < 0 ? "delta-down" : "";
+
+    function cell(value, className = "") {
+      return `<td class="${className}">${value ?? ""}</td>`;
+    }
+
+    function renderKpis() {
+      document.getElementById("meta").textContent =
+        `${DASHBOARD_DATA.meta.baselineYear}년 말 엑셀 기준 | ${DASHBOARD_DATA.meta.basisLabel} | 기준일 ${DASHBOARD_DATA.meta.asOfDate} | 생성 ${DASHBOARD_DATA.meta.generatedAt}`;
+      document.getElementById("kpis").innerHTML = DASHBOARD_DATA.kpis.map(item => `
+        <article class="metric">
+          <div class="metric-label">${item.label}</div>
+          <div class="metric-value">${item.value}</div>
+          <div class="metric-detail">${item.detail}</div>
+        </article>
+      `).join("");
+    }
+
+    function renderTrend(metric = "eventCount") {
+      const rows = DASHBOARD_DATA.dailySeries;
+      const max = Math.max(1, ...rows.map(row => Math.abs(row[metric] || 0)));
+      const labels = rows.length ? `${rows[0].date} - ${rows[rows.length - 1].date}` : "데이터 없음";
+      document.getElementById("trendChart").innerHTML = `
+        <div class="bars" style="--bar-count:${Math.max(rows.length, 1)}">
+          ${rows.map(row => {
+            const value = row[metric] || 0;
+            const h = Math.max(1, Math.round(Math.abs(value) / max * 100));
+            return `<div class="bar ${value < 0 ? "negative" : ""}" style="height:${h}%" title="${row.date}: ${shares(value)}"></div>`;
+          }).join("")}
+        </div>
+        <div class="chart-legend"><span>${labels}</span><span>최대 ${shares(max)}</span></div>
+      `;
+    }
+
+    function renderTable(id, headers, rows) {
+      document.getElementById(id).innerHTML = `
+        <thead><tr>${headers.map(h => `<th class="${h.className || ""}">${h.label}</th>`).join("")}</tr></thead>
+        <tbody>${rows.join("")}</tbody>
+      `;
+    }
+
+    function renderBaseline() {
+      renderTable("baselineTable",
+        [{label:"#"}, {label:"종목"}, {label:"평가액", className:"num"}, {label:"비중", className:"num"}, {label:"지분율", className:"num"}],
+        DASHBOARD_DATA.baselineTop.slice(0, 12).map(row => `<tr>
+          ${cell(row.rank, "rank")}${cell(row.companyName, "company")}${cell(money(row.marketValue), "num")}${cell(pct(row.assetWeight), "num")}${cell(pct(row.ownership), "num")}
+        </tr>`)
+      );
+      renderTable("snapshotTable",
+        [{label:"#"}, {label:"종목"}, {label:"코드"}, {label:"지분율", className:"num"}, {label:"최근 변동", className:"num"}],
+        DASHBOARD_DATA.snapshotTop.slice(0, 12).map((row, index) => `<tr>
+          ${cell(index + 1, "rank")}${cell(row.companyName, "company")}${cell(row.ticker)}${cell(pct(row.ownership), "num")}${cell(signed(row.lastDeltaShares), `num ${cls(row.lastDeltaShares)}`)}
+        </tr>`)
+      );
+    }
+
+    function renderMiniBars(id, rows, valueKey, labelKey, formatValue, limit = 10) {
+      const shown = rows.slice(0, limit);
+      const max = Math.max(1, ...shown.map(row => Math.abs(row[valueKey] || 0)));
+      document.getElementById(id).innerHTML = shown.map(row => {
+        const value = row[valueKey] || 0;
+        const width = Math.max(2, Math.round(Math.abs(value) / max * 100));
+        const direction = value < 0 ? "down" : "up";
+        return `<div class="mini-row">
+          <div class="company" title="${row[labelKey]}">${row[labelKey]}</div>
+          <div class="track"><div class="fill ${direction}" style="--w:${width}%"></div></div>
+          <div class="num ${cls(value)}">${formatValue(value)}</div>
+        </div>`;
+      }).join("");
+    }
+
+    function renderDetails(kind = "events") {
+      if (kind === "sectors") {
+        renderTable("detailTable",
+          [{label:"섹터"}, {label:"종목 수", className:"num"}, {label:"지분율 합계", className:"num"}, {label:"방향"}],
+          DASHBOARD_DATA.sectorRows.map(row => `<tr>
+            ${cell(row.sectorName)}${cell(fmt.format(row.companyCount), "num")}${cell(pct(row.ownershipSum), "num")}${cell(row.netDirection)}
+          </tr>`)
+        );
+        return;
+      }
+      renderTable("detailTable",
+        [{label:"공시일"}, {label:"종목"}, {label:"코드"}, {label:"증감수량", className:"num"}, {label:"변동 후"}, {label:"지분율", className:"num"}, {label:"사유"}],
+        DASHBOARD_DATA.latestEvents.map(row => `<tr>
+          ${cell(row.disclosedAt)}${cell(row.companyName, "company")}${cell(row.ticker)}${cell(signed(row.deltaShares), `num ${cls(row.deltaShares)}`)}${cell(shares(row.sharesAfter), "num")}${cell(pct(row.ownershipAfter), "num")}${cell(row.changeReason)}
+        </tr>`)
+      );
+    }
+
+    renderKpis();
+    renderTrend();
+    renderBaseline();
+    renderMiniBars("changeBars", DASHBOARD_DATA.largestChanges, "deltaShares", "companyName", signed);
+    renderMiniBars("ownershipBars", DASHBOARD_DATA.ownershipChanges, "ownershipDiff", "companyName", pp);
+    renderDetails();
+
+    document.getElementById("trendMetric").addEventListener("change", event => renderTrend(event.target.value));
+    document.querySelectorAll(".tab").forEach(button => {
+      button.addEventListener("click", () => {
+        document.querySelectorAll(".tab").forEach(item => item.setAttribute("aria-pressed", "false"));
+        button.setAttribute("aria-pressed", "true");
+        renderDetails(button.dataset.table);
+      });
+    });
+    document.getElementById("downloadJson").addEventListener("click", () => {
+      const blob = new Blob([JSON.stringify(DASHBOARD_DATA, null, 2)], {type: "application/json"});
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `nps-dashboard-${DASHBOARD_DATA.meta.asOfDate}.json`;
+      link.click();
+      URL.revokeObjectURL(url);
+    });
+  </script>
+</body>
+</html>

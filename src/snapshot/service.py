@@ -7,7 +7,11 @@ from src.db.repository import Repository
 from src.models import BasisType, SectorSummaryRow, SnapshotRow
 
 
-def build_snapshot(repository: Repository, as_of_date: str, basis_type: BasisType) -> tuple[int, list[SnapshotRow], list[SectorSummaryRow]]:
+def calculate_snapshot_rows(
+    repository: Repository,
+    as_of_date: str,
+    basis_type: BasisType,
+) -> tuple[list[SnapshotRow], list[SectorSummaryRow]]:
     events = repository.list_events_until(as_of_date, basis_type)
     state: dict[str, dict[str, object]] = {}
     synthetic_index = 0
@@ -57,5 +61,10 @@ def build_snapshot(repository: Repository, as_of_date: str, basis_type: BasisTyp
             reverse=True,
         )
     ]
+    return rows, summarize_sectors(rows)
+
+
+def build_snapshot(repository: Repository, as_of_date: str, basis_type: BasisType) -> tuple[int, list[SnapshotRow], list[SectorSummaryRow]]:
+    rows, sector_rows = calculate_snapshot_rows(repository, as_of_date, basis_type)
     run_id = repository.save_snapshot(as_of_date, basis_type, rows)
-    return run_id, rows, summarize_sectors(rows)
+    return run_id, rows, sector_rows
