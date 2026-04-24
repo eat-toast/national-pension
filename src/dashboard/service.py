@@ -48,13 +48,17 @@ def build_dashboard_data(
     basis_type: BasisType,
     baseline_year: str,
 ) -> dict[str, Any]:
-    events_2025 = [row for row in event_rows if str(row.get("disclosed_at", ""))[:4] == "2025"]
+    enriched_events = _with_ownership_deltas(event_rows, baseline_rows)
+    events_2025 = [row for row in enriched_events if str(row.get("disclosed_at", ""))[:4] == "2025"]
     changed_companies = {normalize_company_name(str(row.get("company_name", ""))) for row in events_2025}
     latest_disclosed_at = max((str(row.get("disclosed_at", "")) for row in events_2025), default="")
     baseline_total = sum(row.market_value_krw_100m or 0.0 for row in baseline_rows)
     increases = sum(1 for row in events_2025 if _as_float(row.get("delta_shares")) and _as_float(row.get("delta_shares")) > 0)
     decreases = sum(1 for row in events_2025 if _as_float(row.get("delta_shares")) and _as_float(row.get("delta_shares")) < 0)
     comparisons = _ownership_comparisons(baseline_rows, snapshot_rows)
+    comparison_by_name = {normalize_company_name(str(row["companyName"])): row for row in comparisons}
+    latest_event_by_key = _latest_event_by_key(enriched_events)
+    sector_deltas = _sector_ownership_deltas(snapshot_rows, comparison_by_name)
 
     return {
         "meta": {
@@ -73,13 +77,39 @@ def build_dashboard_data(
             {"label": "최신 추적 종목", "value": f"{len(snapshot_rows):,}", "detail": "공시 기반 5% 이상"},
             {"label": "2024 대비 매칭", "value": f"{len(comparisons):,}", "detail": "종목명 기준 비교"},
         ],
-        "baselineTop": [_baseline_dict(row) for row in sorted(baseline_rows, key=lambda row: row.market_value_krw_100m or 0, reverse=True)[:20]],
-        "snapshotTop": [_snapshot_dict(row) for row in sorted(snapshot_rows, key=lambda row: row.estimated_ownership or 0, reverse=True)[:20]],
+        "baselineRows": [
+            _baseline_dict(row, comparison_by_name.get(normalize_company_name(row.company_name)))
+            for row in baseline_rows
+        ],
+        "snapshotRows": [
+            _snapshot_dict(
+                row,
+                latest_event_by_key.get(_row_key(row.ticker, row.company_name)),
+                comparison_by_name.get(normalize_company_name(row.company_name)),
+            )
+            for row in snapshot_rows
+        ],
+        "eventHistory": [_event_dict(row) for row in enriched_events],
+        "baselineTop": [
+            _baseline_dict(row, comparison_by_name.get(normalize_company_name(row.company_name)))
+            for row in sorted(baseline_rows, key=lambda row: row.market_value_krw_100m or 0, reverse=True)[:20]
+        ],
+        "snapshotTop": [
+            _snapshot_dict(
+                row,
+                latest_event_by_key.get(_row_key(row.ticker, row.company_name)),
+                comparison_by_name.get(normalize_company_name(row.company_name)),
+            )
+            for row in sorted(snapshot_rows, key=lambda row: row.estimated_ownership or 0, reverse=True)[:20]
+        ],
         "ownershipChanges": comparisons[:20],
         "dailySeries": _daily_series(events_2025),
         "largestChanges": _largest_changes(events_2025, 20),
         "latestEvents": [_event_dict(row) for row in sorted(events_2025, key=lambda row: (str(row.get("disclosed_at", "")), int(row.get("id") or 0)), reverse=True)[:30]],
-        "sectorRows": [_sector_dict(row) for row in sorted(sector_rows, key=lambda row: float(row.get("ownership_sum") or 0), reverse=True)[:12]],
+        "sectorRows": [
+            _sector_dict(row, sector_deltas.get(str(row.get("sector_name") or "미분류")))
+            for row in sorted(sector_rows, key=lambda row: float(row.get("ownership_sum") or 0), reverse=True)[:12]
+        ],
     }
 
 
@@ -330,6 +360,31 @@ def render_dashboard_html(data: dict[str, Any]) -> str:
       background: var(--ink);
       border-color: var(--ink);
     }}
+    .search-panel {{
+      display: grid;
+      grid-template-columns: minmax(220px, 320px) 1fr;
+      gap: 12px;
+      align-items: center;
+      margin-bottom: 10px;
+    }}
+    .search-input {{
+      width: 100%;
+      height: 38px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      padding: 0 12px;
+      font: inherit;
+      background: var(--surface);
+    }}
+    .search-summary {{
+      color: var(--muted);
+      font-size: 13px;
+    }}
+    .empty {{
+      padding: 18px;
+      color: var(--muted);
+      font-size: 13px;
+    }}
     @media (max-width: 1100px) {{
       .kpis {{ grid-template-columns: repeat(3, minmax(0, 1fr)); }}
       .grid, .split {{ grid-template-columns: 1fr; }}
@@ -339,6 +394,7 @@ def render_dashboard_html(data: dict[str, Any]) -> str:
       .topbar {{ align-items: flex-start; flex-direction: column; }}
       .actions {{ justify-content: flex-start; }}
       .kpis {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }}
+      .search-panel {{ grid-template-columns: 1fr; }}
       .metric-value {{ font-size: 21px; }}
       table {{ font-size: 12px; }}
       th, td {{ padding: 8px; }}
@@ -360,6 +416,7 @@ def render_dashboard_html(data: dict[str, Any]) -> str:
           <option value="increaseCount">증가 건수</option>
           <option value="decreaseCount">감소 건수</option>
           <option value="absDeltaShares">변동 수량</option>
+          <option value="absOwnershipDelta">지분율 변동</option>
         </select>
         <button id="downloadJson" type="button">JSON</button>
       </div>
@@ -376,11 +433,11 @@ def render_dashboard_html(data: dict[str, Any]) -> str:
         <div class="chart-surface"><div class="chart" id="trendChart"></div></div>
         <div class="split">
           <div>
-            <div class="section-title"><h2>2024 평가액 상위</h2><span class="hint">억원</span></div>
+            <div class="section-title"><h2>2024 평가액 상위</h2><span class="hint">최신 대비 포함</span></div>
             <div class="table-surface"><table id="baselineTable"></table></div>
           </div>
           <div>
-            <div class="section-title"><h2>최신 지분율 상위</h2><span class="hint">공시 기반</span></div>
+            <div class="section-title"><h2>최신 지분율 상위</h2><span class="hint">지분율 변동 포함</span></div>
             <div class="table-surface"><table id="snapshotTable"></table></div>
           </div>
         </div>
@@ -392,6 +449,14 @@ def render_dashboard_html(data: dict[str, Any]) -> str:
         <div class="table-surface"><div class="mini-bars" id="ownershipBars"></div></div>
       </aside>
     </div>
+    <section class="section">
+      <div class="section-title"><h2>종목별 히스토리</h2><span class="hint">2024 엑셀 + 공시 DB</span></div>
+      <div class="search-panel">
+        <input class="search-input" id="stockSearch" type="search" placeholder="종목명 입력" autocomplete="off">
+        <div class="search-summary" id="searchSummary"></div>
+      </div>
+      <div class="table-surface"><table id="searchTable"></table></div>
+    </section>
     <section class="section">
       <div class="tabs">
         <button class="tab" data-table="events" aria-pressed="true" type="button">최근 이벤트</button>
@@ -405,10 +470,12 @@ def render_dashboard_html(data: dict[str, Any]) -> str:
     const fmt = new Intl.NumberFormat("ko-KR");
     const pct = (v, digits = 2) => v == null ? "" : `${{(v * 100).toFixed(digits)}}%`;
     const pp = v => v == null ? "" : `${{(v * 100).toFixed(2)}}%p`;
+    const signedPp = v => v == null ? "" : `${{v > 0 ? "+" : ""}}${{(v * 100).toFixed(2)}}%p`;
     const shares = v => v == null ? "" : fmt.format(Math.round(v));
     const money = v => v == null ? "" : fmt.format(Math.round(v));
     const signed = v => v == null ? "" : `${{v > 0 ? "+" : ""}}${{shares(v)}}`;
     const cls = v => v > 0 ? "delta-up" : v < 0 ? "delta-down" : "";
+    const norm = value => String(value || "").toLowerCase().replace(/\\s+/g, "").replaceAll("(주)", "").replaceAll("㈜", "").replace(/보통주$|우선주$/g, "");
 
     function cell(value, className = "") {{
       return `<td class="${{className}}">${{value ?? ""}}</td>`;
@@ -428,17 +495,19 @@ def render_dashboard_html(data: dict[str, Any]) -> str:
 
     function renderTrend(metric = "eventCount") {{
       const rows = DASHBOARD_DATA.dailySeries;
-      const max = Math.max(1, ...rows.map(row => Math.abs(row[metric] || 0)));
+      const isOwnershipMetric = metric.toLowerCase().includes("ownership");
+      const max = Math.max(isOwnershipMetric ? 0.0001 : 1, ...rows.map(row => Math.abs(row[metric] || 0)));
       const labels = rows.length ? `${{rows[0].date}} - ${{rows[rows.length - 1].date}}` : "데이터 없음";
+      const formatMetric = isOwnershipMetric ? signedPp : shares;
       document.getElementById("trendChart").innerHTML = `
         <div class="bars" style="--bar-count:${{Math.max(rows.length, 1)}}">
           ${{rows.map(row => {{
             const value = row[metric] || 0;
             const h = Math.max(1, Math.round(Math.abs(value) / max * 100));
-            return `<div class="bar ${{value < 0 ? "negative" : ""}}" style="height:${{h}}%" title="${{row.date}}: ${{shares(value)}}"></div>`;
+            return `<div class="bar ${{value < 0 ? "negative" : ""}}" style="height:${{h}}%" title="${{row.date}}: ${{formatMetric(value)}}"></div>`;
           }}).join("")}}
         </div>
-        <div class="chart-legend"><span>${{labels}}</span><span>최대 ${{shares(max)}}</span></div>
+        <div class="chart-legend"><span>${{labels}}</span><span>최대 ${{formatMetric(max)}}</span></div>
       `;
     }}
 
@@ -451,15 +520,15 @@ def render_dashboard_html(data: dict[str, Any]) -> str:
 
     function renderBaseline() {{
       renderTable("baselineTable",
-        [{{label:"#"}}, {{label:"종목"}}, {{label:"평가액", className:"num"}}, {{label:"비중", className:"num"}}, {{label:"지분율", className:"num"}}],
+        [{{label:"#"}}, {{label:"종목"}}, {{label:"평가액", className:"num"}}, {{label:"지분율", className:"num"}}, {{label:"최신 대비", className:"num"}}],
         DASHBOARD_DATA.baselineTop.slice(0, 12).map(row => `<tr>
-          ${{cell(row.rank, "rank")}}${{cell(row.companyName, "company")}}${{cell(money(row.marketValue), "num")}}${{cell(pct(row.assetWeight), "num")}}${{cell(pct(row.ownership), "num")}}
+          ${{cell(row.rank, "rank")}}${{cell(row.companyName, "company")}}${{cell(money(row.marketValue), "num")}}${{cell(pct(row.ownership), "num")}}${{cell(signedPp(row.currentOwnershipDiff), `num ${{cls(row.currentOwnershipDiff)}}`)}}
         </tr>`)
       );
       renderTable("snapshotTable",
-        [{{label:"#"}}, {{label:"종목"}}, {{label:"코드"}}, {{label:"지분율", className:"num"}}, {{label:"최근 변동", className:"num"}}],
+        [{{label:"#"}}, {{label:"종목"}}, {{label:"코드"}}, {{label:"지분율", className:"num"}}, {{label:"지분율 변동", className:"num"}}, {{label:"수량 변동", className:"num"}}],
         DASHBOARD_DATA.snapshotTop.slice(0, 12).map((row, index) => `<tr>
-          ${{cell(index + 1, "rank")}}${{cell(row.companyName, "company")}}${{cell(row.ticker)}}${{cell(pct(row.ownership), "num")}}${{cell(signed(row.lastDeltaShares), `num ${{cls(row.lastDeltaShares)}}`)}}
+          ${{cell(index + 1, "rank")}}${{cell(row.companyName, "company")}}${{cell(row.ticker)}}${{cell(pct(row.ownership), "num")}}${{cell(signedPp(row.lastOwnershipDelta), `num ${{cls(row.lastOwnershipDelta)}}`)}}${{cell(signed(row.lastDeltaShares), `num ${{cls(row.lastDeltaShares)}}`)}}
         </tr>`)
       );
     }}
@@ -479,20 +548,75 @@ def render_dashboard_html(data: dict[str, Any]) -> str:
       }}).join("");
     }}
 
+    function renderChangeBars() {{
+      const shown = DASHBOARD_DATA.largestChanges.slice(0, 10);
+      const max = Math.max(1, ...shown.map(row => Math.abs(row.deltaShares || 0)));
+      document.getElementById("changeBars").innerHTML = shown.map(row => {{
+        const value = row.deltaShares || 0;
+        const width = Math.max(2, Math.round(Math.abs(value) / max * 100));
+        const direction = value < 0 ? "down" : "up";
+        return `<div class="mini-row">
+          <div class="company" title="${{row.companyName}}">${{row.companyName}}</div>
+          <div class="track"><div class="fill ${{direction}}" style="--w:${{width}}%"></div></div>
+          <div class="num ${{cls(value)}}">${{signed(value)}}<br>${{signedPp(row.ownershipDelta)}}</div>
+        </div>`;
+      }}).join("");
+    }}
+
     function renderDetails(kind = "events") {{
       if (kind === "sectors") {{
         renderTable("detailTable",
-          [{{label:"섹터"}}, {{label:"종목 수", className:"num"}}, {{label:"지분율 합계", className:"num"}}, {{label:"방향"}}],
+          [{{label:"섹터"}}, {{label:"종목 수", className:"num"}}, {{label:"지분율 합계", className:"num"}}, {{label:"지분율 변동", className:"num"}}, {{label:"방향"}}],
           DASHBOARD_DATA.sectorRows.map(row => `<tr>
-            ${{cell(row.sectorName)}}${{cell(fmt.format(row.companyCount), "num")}}${{cell(pct(row.ownershipSum), "num")}}${{cell(row.netDirection)}}
+            ${{cell(row.sectorName)}}${{cell(fmt.format(row.companyCount), "num")}}${{cell(pct(row.ownershipSum), "num")}}${{cell(signedPp(row.ownershipDiffSum), `num ${{cls(row.ownershipDiffSum)}}`)}}${{cell(row.netDirection)}}
           </tr>`)
         );
         return;
       }}
       renderTable("detailTable",
-        [{{label:"공시일"}}, {{label:"종목"}}, {{label:"코드"}}, {{label:"증감수량", className:"num"}}, {{label:"변동 후"}}, {{label:"지분율", className:"num"}}, {{label:"사유"}}],
+        [{{label:"공시일"}}, {{label:"종목"}}, {{label:"코드"}}, {{label:"수량 증감", className:"num"}}, {{label:"지분율 증감", className:"num"}}, {{label:"변동 후 수량", className:"num"}}, {{label:"지분율", className:"num"}}, {{label:"사유"}}],
         DASHBOARD_DATA.latestEvents.map(row => `<tr>
-          ${{cell(row.disclosedAt)}}${{cell(row.companyName, "company")}}${{cell(row.ticker)}}${{cell(signed(row.deltaShares), `num ${{cls(row.deltaShares)}}`)}}${{cell(shares(row.sharesAfter), "num")}}${{cell(pct(row.ownershipAfter), "num")}}${{cell(row.changeReason)}}
+          ${{cell(row.disclosedAt)}}${{cell(row.companyName, "company")}}${{cell(row.ticker)}}${{cell(signed(row.deltaShares), `num ${{cls(row.deltaShares)}}`)}}${{cell(signedPp(row.ownershipDelta), `num ${{cls(row.ownershipDelta)}}`)}}${{cell(shares(row.sharesAfter), "num")}}${{cell(pct(row.ownershipAfter), "num")}}${{cell(row.changeReason)}}
+        </tr>`)
+      );
+    }}
+
+    function renderSearch(query = "") {{
+      const q = norm(query);
+      const summary = document.getElementById("searchSummary");
+      if (!q) {{
+        summary.textContent = "";
+        document.getElementById("searchTable").innerHTML = `<tbody><tr><td class="empty">종목명을 입력하면 2024 엑셀 기준점과 공시 DB 변동 내역이 이어서 표시됩니다.</td></tr></tbody>`;
+        return;
+      }}
+      const baseline = DASHBOARD_DATA.baselineRows
+        .filter(row => norm(row.companyName).includes(q))
+        .map(row => ({{
+          date: `${{DASHBOARD_DATA.meta.baselineYear}}-12-31`,
+          source: "기준 엑셀",
+          companyName: row.companyName,
+          ticker: "",
+          sharesAfter: null,
+          deltaShares: null,
+          ownershipAfter: row.ownership,
+          ownershipDelta: null,
+          reason: `평가액 ${{money(row.marketValue)}}억원`
+        }}));
+      const events = DASHBOARD_DATA.eventHistory.filter(row =>
+        norm(row.companyName).includes(q) || norm(row.ticker).includes(q)
+      );
+      const rows = [...baseline, ...events].sort((a, b) =>
+        `${{a.date || a.disclosedAt || ""}}${{a.source}}`.localeCompare(`${{b.date || b.disclosedAt || ""}}${{b.source}}`)
+      );
+      summary.textContent = `${{rows.length}}건`;
+      if (!rows.length) {{
+        document.getElementById("searchTable").innerHTML = `<tbody><tr><td class="empty">검색 결과가 없습니다.</td></tr></tbody>`;
+        return;
+      }}
+      renderTable("searchTable",
+        [{{label:"일자"}}, {{label:"출처"}}, {{label:"종목"}}, {{label:"코드"}}, {{label:"수량 증감", className:"num"}}, {{label:"지분율 증감", className:"num"}}, {{label:"보유수량", className:"num"}}, {{label:"지분율", className:"num"}}, {{label:"내용"}}],
+        rows.map(row => `<tr>
+          ${{cell(row.date || row.disclosedAt)}}${{cell(row.source || "공시 DB")}}${{cell(row.companyName, "company")}}${{cell(row.ticker)}}${{cell(signed(row.deltaShares), `num ${{cls(row.deltaShares)}}`)}}${{cell(signedPp(row.ownershipDelta), `num ${{cls(row.ownershipDelta)}}`)}}${{cell(shares(row.sharesAfter), "num")}}${{cell(pct(row.ownershipAfter), "num")}}${{cell(row.reason || row.changeReason)}}
         </tr>`)
       );
     }}
@@ -500,11 +624,13 @@ def render_dashboard_html(data: dict[str, Any]) -> str:
     renderKpis();
     renderTrend();
     renderBaseline();
-    renderMiniBars("changeBars", DASHBOARD_DATA.largestChanges, "deltaShares", "companyName", signed);
-    renderMiniBars("ownershipBars", DASHBOARD_DATA.ownershipChanges, "ownershipDiff", "companyName", pp);
+    renderChangeBars();
+    renderMiniBars("ownershipBars", DASHBOARD_DATA.ownershipChanges, "ownershipDiff", "companyName", signedPp);
     renderDetails();
+    renderSearch();
 
     document.getElementById("trendMetric").addEventListener("change", event => renderTrend(event.target.value));
+    document.getElementById("stockSearch").addEventListener("input", event => renderSearch(event.target.value));
     document.querySelectorAll(".tab").forEach(button => {{
       button.addEventListener("click", () => {{
         document.querySelectorAll(".tab").forEach(item => item.setAttribute("aria-pressed", "false"));
@@ -547,9 +673,67 @@ def _ownership_comparisons(baseline_rows: list[BaselineHolding], snapshot_rows: 
     return sorted(comparisons, key=lambda item: abs(float(item["ownershipDiff"])), reverse=True)
 
 
+def _with_ownership_deltas(
+    event_rows: list[dict[str, Any]],
+    baseline_rows: list[BaselineHolding],
+) -> list[dict[str, Any]]:
+    baseline_by_name = {normalize_company_name(row.company_name): row.ownership for row in baseline_rows}
+    previous_by_key: dict[str, float] = {}
+    enriched: list[dict[str, Any]] = []
+    for row in sorted(event_rows, key=lambda item: (str(item.get("disclosed_at") or ""), str(item.get("effective_date") or ""), int(item.get("id") or 0))):
+        copied = dict(row)
+        key = _row_key(str(row.get("ticker") or ""), str(row.get("company_name") or ""))
+        ownership_after = _as_float(row.get("ownership_after"))
+        previous = previous_by_key.get(key)
+        if previous is None:
+            previous = baseline_by_name.get(normalize_company_name(str(row.get("company_name") or "")))
+        copied["ownership_delta"] = (
+            ownership_after - previous
+            if ownership_after is not None and previous is not None
+            else None
+        )
+        if ownership_after is not None:
+            previous_by_key[key] = ownership_after
+        enriched.append(copied)
+    return enriched
+
+
+def _latest_event_by_key(event_rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    latest: dict[str, dict[str, Any]] = {}
+    for row in event_rows:
+        latest[_row_key(str(row.get("ticker") or ""), str(row.get("company_name") or ""))] = row
+    return latest
+
+
+def _row_key(ticker: str | None, company_name: str) -> str:
+    return ticker or normalize_company_name(company_name)
+
+
+def _sector_ownership_deltas(
+    snapshot_rows: list[SnapshotRow],
+    comparison_by_name: dict[str, dict[str, Any]],
+) -> dict[str, float]:
+    grouped: dict[str, float] = defaultdict(float)
+    for row in snapshot_rows:
+        comparison = comparison_by_name.get(normalize_company_name(row.company_name))
+        if not comparison:
+            continue
+        grouped[row.sector_name or "미분류"] += float(comparison.get("ownershipDiff") or 0.0)
+    return dict(grouped)
+
+
 def _daily_series(event_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     grouped: dict[str, dict[str, Any]] = defaultdict(
-        lambda: {"date": "", "eventCount": 0, "increaseCount": 0, "decreaseCount": 0, "netDeltaShares": 0.0, "absDeltaShares": 0.0}
+        lambda: {
+            "date": "",
+            "eventCount": 0,
+            "increaseCount": 0,
+            "decreaseCount": 0,
+            "netDeltaShares": 0.0,
+            "absDeltaShares": 0.0,
+            "netOwnershipDelta": 0.0,
+            "absOwnershipDelta": 0.0,
+        }
     )
     for row in event_rows:
         date = str(row.get("disclosed_at") or "")
@@ -565,6 +749,9 @@ def _daily_series(event_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             target["decreaseCount"] += 1
         target["netDeltaShares"] += delta
         target["absDeltaShares"] += abs(delta)
+        ownership_delta = _as_float(row.get("ownership_delta")) or 0.0
+        target["netOwnershipDelta"] += ownership_delta
+        target["absOwnershipDelta"] += abs(ownership_delta)
     return [grouped[date] for date in sorted(grouped)]
 
 
@@ -574,23 +761,32 @@ def _largest_changes(event_rows: list[dict[str, Any]], limit: int) -> list[dict[
     return [_event_dict(row) for row in rows[:limit]]
 
 
-def _baseline_dict(row: BaselineHolding) -> dict[str, Any]:
+def _baseline_dict(row: BaselineHolding, comparison: dict[str, Any] | None = None) -> dict[str, Any]:
     return {
         "rank": row.rank,
         "companyName": row.company_name,
         "marketValue": row.market_value_krw_100m,
         "assetWeight": row.asset_weight,
         "ownership": row.ownership,
+        "currentOwnership": comparison.get("currentOwnership") if comparison else None,
+        "currentOwnershipDiff": comparison.get("ownershipDiff") if comparison else None,
     }
 
 
-def _snapshot_dict(row: SnapshotRow) -> dict[str, Any]:
+def _snapshot_dict(
+    row: SnapshotRow,
+    latest_event: dict[str, Any] | None = None,
+    comparison: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     return {
         "companyName": row.company_name,
         "ticker": row.ticker or "",
         "estimatedShares": row.estimated_shares,
         "ownership": row.estimated_ownership,
+        "baselineOwnership": comparison.get("baselineOwnership") if comparison else None,
+        "baselineOwnershipDiff": comparison.get("ownershipDiff") if comparison else None,
         "lastDeltaShares": row.last_delta_shares,
+        "lastOwnershipDelta": _as_float(latest_event.get("ownership_delta")) if latest_event else None,
         "lastChangeReason": row.last_change_reason or "",
         "lastDisclosedAt": row.last_disclosed_at,
         "sectorName": row.sector_name,
@@ -604,6 +800,7 @@ def _event_dict(row: dict[str, Any]) -> dict[str, Any]:
         "effectiveDate": str(row.get("effective_date") or ""),
         "disclosedAt": str(row.get("disclosed_at") or ""),
         "deltaShares": _as_float(row.get("delta_shares")),
+        "ownershipDelta": _as_float(row.get("ownership_delta")),
         "sharesAfter": _as_float(row.get("shares_after")),
         "ownershipAfter": _as_float(row.get("ownership_after")),
         "changeReason": str(row.get("change_reason") or ""),
@@ -611,11 +808,12 @@ def _event_dict(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _sector_dict(row: dict[str, Any]) -> dict[str, Any]:
+def _sector_dict(row: dict[str, Any], ownership_diff_sum: float | None = None) -> dict[str, Any]:
     return {
         "sectorName": str(row.get("sector_name") or "미분류"),
         "companyCount": int(row.get("company_count") or 0),
         "ownershipSum": _as_float(row.get("ownership_sum")) or 0.0,
+        "ownershipDiffSum": ownership_diff_sum,
         "netDirection": str(row.get("net_direction") or ""),
     }
 

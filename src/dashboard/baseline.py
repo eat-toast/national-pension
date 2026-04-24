@@ -65,7 +65,7 @@ def normalize_company_name(value: str) -> str:
     text = text.replace("(주)", "")
     text = text.replace("㈜", "")
     text = text.lower()
-    suffixes = ("보통주", "우선주", "우")
+    suffixes = ("보통주", "우선주")
     for suffix in suffixes:
         if text.endswith(suffix):
             text = text[: -len(suffix)]

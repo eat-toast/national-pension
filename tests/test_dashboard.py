@@ -59,6 +59,10 @@ class DashboardTest(unittest.TestCase):
                 self.assertIn("국민연금 국내주식 변동 대시보드", html)
                 self.assertIn("DASHBOARD_DATA", html)
                 self.assertIn("삼성전자", html)
+                self.assertIn("종목별 히스토리", html)
+                self.assertIn("stockSearch", html)
+                self.assertIn("ownershipDelta", html)
+                self.assertIn("0.007400000000000004", html)
         finally:
             repository.close()
 
