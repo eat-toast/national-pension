@@ -154,17 +154,28 @@ class Repository:
         )
         self.connection.commit()
 
-    def list_event_tickers(self) -> list[sqlite3.Row]:
+    def list_event_tickers(self, *, only_missing_sector: bool = False, limit: int | None = None) -> list[sqlite3.Row]:
+        where_clauses = ["e.ticker IS NOT NULL"]
+        params: list[int] = []
+        if only_missing_sector:
+            where_clauses.append("s.ticker IS NULL")
+        limit_clause = ""
+        if limit is not None:
+            limit_clause = "LIMIT ?"
+            params.append(limit)
         return list(
             self.connection.execute(
-                """
-                SELECT e.ticker, MAX(r.corp_code) AS corp_code
+                f"""
+                SELECT e.ticker, MAX(e.company_name) AS company_name, MAX(r.corp_code) AS corp_code
                 FROM holding_events e
                 JOIN reports r ON r.receipt_no = e.report_receipt_no
-                WHERE e.ticker IS NOT NULL
+                LEFT JOIN sector_map s ON s.ticker = e.ticker
+                WHERE {" AND ".join(where_clauses)}
                 GROUP BY e.ticker
                 ORDER BY e.ticker
-                """
+                {limit_clause}
+                """,
+                params,
             )
         )
 

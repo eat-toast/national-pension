@@ -342,6 +342,20 @@ def render_dashboard_html(data: dict[str, Any]) -> str:
       border-radius: 999px;
       overflow: hidden;
     }}
+    .track.diverging {{
+      position: relative;
+      overflow: visible;
+      background: #eef2f6;
+    }}
+    .track.diverging::after {{
+      content: "";
+      position: absolute;
+      left: 50%;
+      top: -3px;
+      width: 1px;
+      height: 14px;
+      background: #b8c0cc;
+    }}
     .fill {{
       height: 100%;
       width: var(--w);
@@ -349,6 +363,20 @@ def render_dashboard_html(data: dict[str, Any]) -> str:
     }}
     .fill.down {{ background: var(--coral); }}
     .fill.up {{ background: var(--green); }}
+    .fill.diverging {{
+      position: absolute;
+      top: 0;
+      width: var(--w);
+      z-index: 1;
+    }}
+    .fill.diverging.up {{
+      left: 50%;
+      border-radius: 0 999px 999px 0;
+    }}
+    .fill.diverging.down {{
+      right: 50%;
+      border-radius: 999px 0 0 999px;
+    }}
     .tabs {{
       display: flex;
       gap: 6px;
@@ -548,6 +576,21 @@ def render_dashboard_html(data: dict[str, Any]) -> str:
       }}).join("");
     }}
 
+    function renderDivergingMiniBars(id, rows, valueKey, labelKey, formatValue, limit = 10) {{
+      const shown = rows.slice(0, limit);
+      const max = Math.max(0.0001, ...shown.map(row => Math.abs(row[valueKey] || 0)));
+      document.getElementById(id).innerHTML = shown.map(row => {{
+        const value = row[valueKey] || 0;
+        const width = Math.max(2, Math.round(Math.abs(value) / max * 45));
+        const direction = value < 0 ? "down" : "up";
+        return `<div class="mini-row">
+          <div class="company" title="${{row[labelKey]}}">${{row[labelKey]}}</div>
+          <div class="track diverging"><div class="fill diverging ${{direction}}" style="--w:${{width}}%"></div></div>
+          <div class="num ${{cls(value)}}">${{formatValue(value)}}</div>
+        </div>`;
+      }}).join("");
+    }}
+
     function renderChangeBars() {{
       const shown = DASHBOARD_DATA.largestChanges.slice(0, 10);
       const max = Math.max(1, ...shown.map(row => Math.abs(row.deltaShares || 0)));
@@ -625,7 +668,7 @@ def render_dashboard_html(data: dict[str, Any]) -> str:
     renderTrend();
     renderBaseline();
     renderChangeBars();
-    renderMiniBars("ownershipBars", DASHBOARD_DATA.ownershipChanges, "ownershipDiff", "companyName", signedPp);
+    renderDivergingMiniBars("ownershipBars", DASHBOARD_DATA.ownershipChanges, "ownershipDiff", "companyName", signedPp);
     renderDetails();
     renderSearch();
 

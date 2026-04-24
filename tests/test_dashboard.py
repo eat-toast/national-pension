@@ -62,6 +62,8 @@ class DashboardTest(unittest.TestCase):
                 self.assertIn("종목별 히스토리", html)
                 self.assertIn("stockSearch", html)
                 self.assertIn("ownershipDelta", html)
+                self.assertIn("renderDivergingMiniBars", html)
+                self.assertIn("track diverging", html)
                 self.assertIn("0.007400000000000004", html)
         finally:
             repository.close()

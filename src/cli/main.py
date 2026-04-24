@@ -7,13 +7,16 @@ from pathlib import Path
 
 from src.alerts.kakao import send_kakao_alerts, send_kakao_text_message
 from src.alerts.service import build_alerts
+from src.analysis.sector_trends import build_sector_trends
 from src.collect.dart_client import DartClient
 from src.collect.probe import probe_filings_by_date
 from src.collect.sector_service import sync_sector_map
 from src.collect.service import sync_reports
 from src.config import AppConfig
+from src.dashboard.baseline import load_baseline_holdings
 from src.dashboard.service import export_dashboard
 from src.db.repository import Repository
+from src.export.sector_trends_writer import export_sector_trends_report
 from src.export.xlsx_writer import export_snapshot_workbook
 from src.snapshot.service import build_snapshot
 from src.utils import parse_iso_date, safe_slug
@@ -52,6 +55,14 @@ def build_parser() -> argparse.ArgumentParser:
     dashboard_parser.add_argument("--baseline", default="국내주식 종목별 투자 현황(2024년 말).xlsx")
     dashboard_parser.add_argument("--output")
 
+    sector_trends_parser = subparsers.add_parser("export-sector-trends", help="월별/분기별 섹터 변화 HTML과 CSV를 출력합니다.")
+    sector_trends_parser.add_argument("--from", dest="start_date", required=True)
+    sector_trends_parser.add_argument("--to", dest="end_date", required=True)
+    sector_trends_parser.add_argument("--basis", choices=("effective_date", "disclosure_date"), default="disclosure_date")
+    sector_trends_parser.add_argument("--baseline", default="국내주식 종목별 투자 현황(2024년 말).xlsx")
+    sector_trends_parser.add_argument("--output")
+    sector_trends_parser.add_argument("--csv-output")
+
     alerts_parser = subparsers.add_parser("send-alerts", help="카카오톡 나에게 보내기 알림을 보냅니다.")
     alerts_parser.add_argument("--since", required=True)
     alerts_parser.add_argument("--dry-run", action="store_true")
@@ -65,6 +76,13 @@ def build_parser() -> argparse.ArgumentParser:
     sector_parser.add_argument("--basis", choices=("effective_date", "disclosure_date"), required=True)
 
     sync_sector_parser = subparsers.add_parser("sync-sector-map", help="회사개황 업종코드로 섹터 매핑을 갱신합니다.")
+    sync_sector_parser.add_argument("--limit", type=int, help="처리할 종목 수를 제한합니다.")
+    sync_sector_parser.add_argument(
+        "--include-existing",
+        action="store_true",
+        help="이미 섹터가 저장된 종목도 다시 갱신합니다.",
+    )
+    sync_sector_parser.add_argument("--progress", action="store_true", help="종목별 처리 결과를 출력합니다.")
     sync_sector_parser.set_defaults(command="sync-sector-map")
     return parser
 
@@ -140,7 +158,13 @@ def main(argv: list[str] | None = None) -> int:
                 timeout_seconds=config.dart_timeout_seconds,
                 request_delay_seconds=config.dart_request_delay_seconds,
             )
-            result = sync_sector_map(repository, client)
+            result = sync_sector_map(
+                repository,
+                client,
+                only_missing=not args.include_existing,
+                limit=args.limit,
+                progress=args.progress,
+            )
             print(json.dumps(result, ensure_ascii=False, indent=2))
             return 0
 
@@ -166,6 +190,35 @@ def main(argv: list[str] | None = None) -> int:
             )
             exported = export_dashboard(output_path, args.baseline, repository, as_of_date, args.basis)
             print(str(exported))
+            return 0
+
+        if args.command == "export-sector-trends":
+            start_date = parse_iso_date(args.start_date)
+            end_date = parse_iso_date(args.end_date)
+            baseline_rows = load_baseline_holdings(args.baseline)
+            event_rows = [dict(row) for row in repository.list_events_until(end_date, args.basis)]
+            trends = build_sector_trends(event_rows, baseline_rows, start_date, end_date, args.basis)
+            output_path = (
+                Path(args.output)
+                if args.output
+                else config.output_dir
+                / f"nps_sector_trends_{safe_slug(start_date)}_{safe_slug(end_date)}_{args.basis}.html"
+            )
+            csv_path = (
+                Path(args.csv_output)
+                if args.csv_output
+                else output_path.with_suffix(".csv")
+            )
+            html_path, exported_csv_path = export_sector_trends_report(
+                output_path,
+                csv_path,
+                trends["monthly"],
+                trends["quarterly"],
+                start_date=start_date,
+                end_date=end_date,
+                basis_type=args.basis,
+            )
+            print(json.dumps({"html": str(html_path), "csv": str(exported_csv_path)}, ensure_ascii=False, indent=2))
             return 0
 
         if args.command == "send-alerts":
