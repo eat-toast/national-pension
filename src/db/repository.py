@@ -154,6 +154,20 @@ class Repository:
         )
         self.connection.commit()
 
+    def list_event_tickers(self) -> list[sqlite3.Row]:
+        return list(
+            self.connection.execute(
+                """
+                SELECT e.ticker, MAX(r.corp_code) AS corp_code
+                FROM holding_events e
+                JOIN reports r ON r.receipt_no = e.report_receipt_no
+                WHERE e.ticker IS NOT NULL
+                GROUP BY e.ticker
+                ORDER BY e.ticker
+                """
+            )
+        )
+
     def get_previous_event(self, ticker: str | None, disclosed_at: str) -> sqlite3.Row | None:
         if not ticker:
             return None

@@ -9,6 +9,7 @@ from src.alerts.kakao import send_kakao_alerts, send_kakao_text_message
 from src.alerts.service import build_alerts
 from src.collect.dart_client import DartClient
 from src.collect.probe import probe_filings_by_date
+from src.collect.sector_service import sync_sector_map
 from src.collect.service import sync_reports
 from src.config import AppConfig
 from src.db.repository import Repository
@@ -55,6 +56,9 @@ def build_parser() -> argparse.ArgumentParser:
     sector_parser = subparsers.add_parser("rebuild-sector-summary", help="섹터 요약 스냅샷을 다시 계산합니다.")
     sector_parser.add_argument("--date", required=True)
     sector_parser.add_argument("--basis", choices=("effective_date", "disclosure_date"), required=True)
+
+    sync_sector_parser = subparsers.add_parser("sync-sector-map", help="회사개황 업종코드로 섹터 매핑을 갱신합니다.")
+    sync_sector_parser.set_defaults(command="sync-sector-map")
     return parser
 
 
@@ -116,6 +120,21 @@ def main(argv: list[str] | None = None) -> int:
                     indent=2,
                 )
             )
+            return 0
+
+        if args.command == "sync-sector-map":
+            if not config.dart_api_key:
+                raise RuntimeError("DART_API_KEY is required for sync-sector-map.")
+            client = DartClient(
+                config.dart_api_key,
+                ssl_cert_file=config.ssl_cert_file,
+                retries=config.dart_retries,
+                retry_delay_seconds=config.dart_retry_delay_seconds,
+                timeout_seconds=config.dart_timeout_seconds,
+                request_delay_seconds=config.dart_request_delay_seconds,
+            )
+            result = sync_sector_map(repository, client)
+            print(json.dumps(result, ensure_ascii=False, indent=2))
             return 0
 
         if args.command == "export-xlsx":

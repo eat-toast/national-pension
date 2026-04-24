@@ -210,6 +210,19 @@ class DartClient:
     def elestock_reports(self, corp_code: str) -> list[dict[str, Any]]:
         return self._ownership_reports(ELESTOCK_ENDPOINT, corp_code)
 
+    def company_profile(self, corp_code: str) -> dict[str, Any]:
+        payload = self._get_json(
+            "https://opendart.fss.or.kr/api/company.json",
+            {
+                "crtfc_key": self.api_key,
+                "corp_code": corp_code,
+            },
+        )
+        status = payload.get("status")
+        if status != "000":
+            raise RuntimeError(f"DART company.json failed: {status} {payload.get('message')}")
+        return payload
+
     def _ownership_reports(self, endpoint: str, corp_code: str) -> list[dict[str, Any]]:
         payload = self._get_json(
             endpoint,
