@@ -75,7 +75,12 @@ def main(argv: list[str] | None = None) -> int:
                 timeout_seconds=config.dart_timeout_seconds,
                 request_delay_seconds=config.dart_request_delay_seconds,
             )
-            result = sync_reports(repository, client, parse_iso_date(args.start_date), parse_iso_date(args.end_date))
+            result = sync_reports(
+                repository,
+                client,
+                parse_iso_date(args.start_date),
+                parse_iso_date(args.end_date),
+            )
             print(json.dumps(result, ensure_ascii=False, indent=2))
             return 0
 

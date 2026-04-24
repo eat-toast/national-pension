@@ -106,6 +106,5 @@ class SyncServiceTest(unittest.TestCase):
         finally:
             repository.close()
 
-
 if __name__ == "__main__":
     unittest.main()
