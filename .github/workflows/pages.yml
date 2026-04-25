@@ -1,0 +1,113 @@
+name: Build and deploy GitHub Pages
+
+on:
+  workflow_dispatch:
+    inputs:
+      sync_reports:
+        description: "DART 공시를 다시 수집한 뒤 HTML을 만들지 여부"
+        type: boolean
+        default: true
+      sync_sector_map:
+        description: "수집된 종목의 섹터 매핑도 갱신할지 여부"
+        type: boolean
+        default: true
+      sync_from:
+        description: "DART 수집 시작일"
+        type: string
+        default: "2025-01-01"
+      sync_to:
+        description: "DART 수집 종료일"
+        type: string
+        default: "2026-04-20"
+      dashboard_date:
+        description: "포트폴리오 대시보드 기준일"
+        type: string
+        default: "2025-12-31"
+      trend_start:
+        description: "섹터 변화 시작일"
+        type: string
+        default: "2025-01-01"
+      trend_end:
+        description: "섹터 변화 종료일"
+        type: string
+        default: "2026-04-20"
+      basis:
+        description: "기준일 종류"
+        type: choice
+        options:
+          - disclosure_date
+          - effective_date
+        default: disclosure_date
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    env:
+      DART_API_KEY: ${{ secrets.DART_API_KEY }}
+      NPS_DB_PATH: data/nps_portfolio.sqlite3
+      NPS_OUTPUT_DIR: output
+      NPS_HTML_OUTPUT_DIR: output_html
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Prepare directories
+        run: mkdir -p data output output_html
+
+      - name: Check DART API key
+        if: ${{ inputs.sync_reports }}
+        run: |
+          if [ -z "$DART_API_KEY" ]; then
+            echo "::error::DART_API_KEY repository secret is required when sync_reports is true."
+            exit 1
+          fi
+
+      - name: Sync DART reports
+        if: ${{ inputs.sync_reports }}
+        run: python -m src.cli.main sync-reports --from "${{ inputs.sync_from }}" --to "${{ inputs.sync_to }}"
+
+      - name: Sync sector map
+        if: ${{ inputs.sync_reports && inputs.sync_sector_map }}
+        run: python -m src.cli.main sync-sector-map --progress
+
+      - name: Build static site
+        run: >
+          python scripts/build_site.py
+          --date "${{ inputs.dashboard_date }}"
+          --from "${{ inputs.trend_start }}"
+          --to "${{ inputs.trend_end }}"
+          --basis "${{ inputs.basis }}"
+          --site-dir site
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
