@@ -49,12 +49,11 @@ def build_dashboard_data(
     baseline_year: str,
 ) -> dict[str, Any]:
     enriched_events = _with_ownership_deltas(event_rows, baseline_rows)
-    events_2025 = [row for row in enriched_events if str(row.get("disclosed_at", ""))[:4] == "2025"]
-    changed_companies = {normalize_company_name(str(row.get("company_name", ""))) for row in events_2025}
-    latest_disclosed_at = max((str(row.get("disclosed_at", "")) for row in events_2025), default="")
+    changed_companies = {normalize_company_name(str(row.get("company_name", ""))) for row in enriched_events}
+    latest_disclosed_at = max((str(row.get("disclosed_at", "")) for row in enriched_events), default="")
     baseline_total = sum(row.market_value_krw_100m or 0.0 for row in baseline_rows)
-    increases = sum(1 for row in events_2025 if _as_float(row.get("delta_shares")) and _as_float(row.get("delta_shares")) > 0)
-    decreases = sum(1 for row in events_2025 if _as_float(row.get("delta_shares")) and _as_float(row.get("delta_shares")) < 0)
+    increases = sum(1 for row in enriched_events if _as_float(row.get("delta_shares")) and _as_float(row.get("delta_shares")) > 0)
+    decreases = sum(1 for row in enriched_events if _as_float(row.get("delta_shares")) and _as_float(row.get("delta_shares")) < 0)
     comparisons = _ownership_comparisons(baseline_rows, snapshot_rows)
     comparison_by_name = {normalize_company_name(str(row["companyName"])): row for row in comparisons}
     latest_event_by_key = _latest_event_by_key(enriched_events)
@@ -72,7 +71,7 @@ def build_dashboard_data(
         "kpis": [
             {"label": f"{baseline_year or '기준'}년 말 종목", "value": f"{len(baseline_rows):,}", "detail": "기준 엑셀 전체 행"},
             {"label": "평가액 합계", "value": _format_krw_100m(baseline_total), "detail": "기준 엑셀 평가액"},
-            {"label": "2025 변동 공시", "value": f"{len(events_2025):,}", "detail": f"최근 공시일 {latest_disclosed_at or '-'}"},
+            {"label": "누적 변동 공시", "value": f"{len(enriched_events):,}", "detail": f"최근 공시일 {latest_disclosed_at or '-'}"},
             {"label": "변동 종목", "value": f"{len(changed_companies):,}", "detail": f"증가 {increases:,} / 감소 {decreases:,}"},
             {"label": "최신 추적 종목", "value": f"{len(snapshot_rows):,}", "detail": "공시 기반 5% 이상"},
             {"label": "2024 대비 매칭", "value": f"{len(comparisons):,}", "detail": "종목명 기준 비교"},
@@ -103,9 +102,9 @@ def build_dashboard_data(
             for row in sorted(snapshot_rows, key=lambda row: row.estimated_ownership or 0, reverse=True)[:20]
         ],
         "ownershipChanges": comparisons[:20],
-        "dailySeries": _daily_series(events_2025),
-        "largestChanges": _largest_changes(events_2025, 20),
-        "latestEvents": [_event_dict(row) for row in sorted(events_2025, key=lambda row: (str(row.get("disclosed_at", "")), int(row.get("id") or 0)), reverse=True)[:30]],
+        "dailySeries": _daily_series(enriched_events),
+        "largestChanges": _largest_changes(enriched_events, 20),
+        "latestEvents": [_event_dict(row) for row in sorted(enriched_events, key=lambda row: (str(row.get("disclosed_at", "")), int(row.get("id") or 0)), reverse=True)[:30]],
         "sectorRows": [
             _sector_dict(row, sector_deltas.get(str(row.get("sector_name") or "미분류")))
             for row in sorted(sector_rows, key=lambda row: float(row.get("ownership_sum") or 0), reverse=True)[:12]

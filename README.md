@@ -34,7 +34,7 @@ GitHub Pages 첫 화면에는 `index.html`이 필요합니다. 워크플로가 `
 
 새 데이터를 반영할 때는 내 맥 터미널에서 수집, 섹터 갱신, HTML 생성을 끝낸 뒤 `output_html/`을 커밋하고 푸시합니다.
 
-아래 예시는 2026년 4월 24일까지 반영하는 경우입니다. 다음에 갱신할 때는 `2026-04-24`만 새 기준일로 바꾸면 됩니다.
+아래 예시는 DB에 들어 있는 최신 공시일인 2026년 4월 20일까지 반영하는 경우입니다. 다음에 갱신할 때도 먼저 DB의 최신 공시일을 확인하고, 그 날짜를 스냅샷 기준일과 HTML 파일명에 똑같이 사용합니다.
 
 ### 0. 프로젝트 폴더로 이동
 
@@ -58,13 +58,13 @@ pwd
 
 ### 1. 데이터 수집
 
-DART API는 `corp_code` 없이 전체 공시를 찾을 때 한 번에 3개월까지만 조회할 수 있습니다. 2026년 1월 1일부터 2026년 4월 24일까지 수집하려면 월별로 나눠 실행하는 것이 가장 안전합니다.
+DART API는 `corp_code` 없이 전체 공시를 찾을 때 한 번에 3개월까지만 조회할 수 있습니다. 2026년 1월 1일부터 2026년 4월 20일까지 수집하려면 월별로 나눠 실행하는 것이 가장 안전합니다.
 
 ```bash
 python3 -m src.cli.main sync-reports --from 2026-01-01 --to 2026-01-31
 python3 -m src.cli.main sync-reports --from 2026-02-01 --to 2026-02-28
 python3 -m src.cli.main sync-reports --from 2026-03-01 --to 2026-03-31
-python3 -m src.cli.main sync-reports --from 2026-04-01 --to 2026-04-24
+python3 -m src.cli.main sync-reports --from 2026-04-01 --to 2026-04-20
 ```
 
 다음에 2026년 5월 31일까지 갱신한다면 마지막 줄을 이런 식으로 추가하면 됩니다.
@@ -75,6 +75,13 @@ python3 -m src.cli.main sync-reports --from 2026-05-01 --to 2026-05-31
 
 수집된 데이터는 로컬 DB인 `data/nps_portfolio.sqlite3`에 저장됩니다. 이 DB 파일은 GitHub에 올리지 않습니다.
 
+수집 후 실제로 들어온 최신 공시일을 확인합니다. 조회 종료일과 실제 최신 공시일이 다를 수 있으니 이 날짜를 기준으로 맞춥니다.
+
+```bash
+sqlite3 data/nps_portfolio.sqlite3 \
+  "SELECT MAX(disclosed_at) FROM reports;"
+```
+
 ### 2. 섹터 갱신
 
 새 종목이 생겼거나 섹터가 비어 있을 수 있으니 HTML 생성 전에 한 번 실행합니다.
@@ -83,21 +90,43 @@ python3 -m src.cli.main sync-reports --from 2026-05-01 --to 2026-05-31
 python3 -m src.cli.main sync-sector-map --progress
 ```
 
-### 3. HTML 생성
+### 3. DB 스냅샷 저장
+
+HTML은 이벤트 테이블에서 즉석 계산할 수 있지만, DB의 저장 스냅샷과 공개 HTML 기준일을 맞추려면 같은 날짜로 스냅샷을 먼저 저장합니다.
+
+```bash
+python3 -m src.cli.main build-snapshot \
+  --date 2026-04-20 \
+  --basis disclosure_date
+```
+
+저장된 최신 스냅샷 날짜와 행 수를 확인합니다.
+
+```bash
+sqlite3 -header -column data/nps_portfolio.sqlite3 \
+  "SELECT r.id, r.as_of_date, COUNT(sr.rowid) AS rows, MAX(sr.last_disclosed_at) AS latest_disclosed
+   FROM snapshot_runs r
+   JOIN snapshot_rows sr ON sr.run_id = r.id
+   GROUP BY r.id
+   ORDER BY r.as_of_date DESC, r.id DESC
+   LIMIT 5;"
+```
+
+### 4. HTML 생성
 
 통합 대시보드와 CSV를 `output_html/`에 다시 만듭니다. 이 명령을 실행하면 포트폴리오, 섹터 변화, 전략 탭이 들어간 통합 HTML이 생성됩니다.
 
 ```bash
 python3 -m src.cli.main export-combined-dashboard \
-  --date 2026-04-24 \
+  --date 2026-04-20 \
   --from 2025-01-01 \
-  --to 2026-04-24 \
+  --to 2026-04-20 \
   --basis disclosure_date \
-  --output output_html/nps_combined_2026-04-24_disclosure_date.html \
-  --csv-output output_html/nps_combined_2026-04-24_disclosure_date_sector_trends.csv
+  --output output_html/nps_combined_2026-04-20_disclosure_date.html \
+  --csv-output output_html/nps_combined_2026-04-20_disclosure_date_sector_trends.csv
 ```
 
-다음에 기준일을 바꾸면 `--date`, `--to`, 파일명 날짜를 모두 같은 날짜로 맞춥니다. 예를 들어 2026년 5월 31일까지 반영한다면 이렇게 바꿉니다.
+다음에 기준일을 바꾸면 `build-snapshot --date`, `export-combined-dashboard --date`, `--to`, `--output` 파일명, `--csv-output` 파일명 날짜를 모두 같은 날짜로 맞춥니다. 예를 들어 2026년 5월 31일까지 실제 공시가 들어왔다면 이렇게 바꿉니다.
 
 ```bash
 python3 -m src.cli.main export-combined-dashboard \
@@ -113,30 +142,37 @@ python3 -m src.cli.main export-combined-dashboard \
 
 ```bash
 python3 -m src.cli.main export-dashboard \
-  --date 2026-04-24 \
+  --date 2026-04-20 \
   --basis disclosure_date \
-  --output output_html/nps_dashboard_2026-04-24_disclosure_date.html
+  --output output_html/nps_dashboard_2026-04-20_disclosure_date.html
 
 python3 -m src.cli.main export-sector-trends \
   --from 2025-01-01 \
-  --to 2026-04-24 \
+  --to 2026-04-20 \
   --basis disclosure_date \
-  --output output_html/nps_sector_trends_2025-01-01_2026-04-24_disclosure_date.html \
-  --csv-output output_html/nps_sector_trends_2025-01-01_2026-04-24_disclosure_date.csv
+  --output output_html/nps_sector_trends_2025-01-01_2026-04-20_disclosure_date.html \
+  --csv-output output_html/nps_sector_trends_2025-01-01_2026-04-20_disclosure_date.csv
 ```
 
-### 4. 로컬에서 HTML 확인
+### 5. 로컬에서 HTML 확인
 
 전략 탭이 들어갔는지 터미널에서 먼저 확인합니다.
 
 ```bash
 grep -n "strategyFrame\\|전략\\|국민연금 10% 이상 보유주 매수 전략" \
-  output_html/nps_combined_2026-04-24_disclosure_date.html
+  output_html/nps_combined_2026-04-20_disclosure_date.html
 ```
 
-브라우저에서 직접 열어보고 싶으면 Finder에서 `output_html/nps_combined_2026-04-24_disclosure_date.html` 파일을 더블클릭합니다.
+HTML 안의 기준일도 확인합니다.
 
-### 5. GitHub에 올리기
+```bash
+grep -o "asOfDate&quot;:&quot;[0-9-]*" \
+  output_html/nps_combined_2026-04-20_disclosure_date.html
+```
+
+브라우저에서 직접 열어보고 싶으면 Finder에서 `output_html/nps_combined_2026-04-20_disclosure_date.html` 파일을 더블클릭합니다.
+
+### 6. GitHub에 올리기
 
 변경 파일을 확인합니다.
 
@@ -148,7 +184,7 @@ git status
 
 ```bash
 git add output_html
-git commit -m "Update dashboard HTML through 2026-04-24"
+git commit -m "Update dashboard HTML through 2026-04-20"
 git push
 ```
 
@@ -160,7 +196,7 @@ git commit -m "Update dashboard and strategy tab"
 git push
 ```
 
-### 6. GitHub Actions 배포 확인
+### 7. GitHub Actions 배포 확인
 
 `main`에 푸시하면 `.github/workflows/pages.yml`이 자동으로 실행됩니다. GitHub에서 아래 순서로 확인합니다.
 
@@ -169,16 +205,17 @@ git push
 3. `Deploy output_html to GitHub Pages` 실행이 초록색 체크로 끝났는지 봅니다.
 4. Pages 주소를 새로고침합니다.
 
-배포 직후 예전 화면이 보이면 브라우저 캐시일 수 있습니다. 강력 새로고침을 하거나 주소 끝에 `?v=20260424`처럼 임시 쿼리를 붙여 확인합니다.
+배포 직후 예전 화면이 보이면 브라우저 캐시일 수 있습니다. 강력 새로고침을 하거나 주소 끝에 `?v=20260420`처럼 임시 쿼리를 붙여 확인합니다.
 
 수동으로 다시 배포하고 싶을 때는 GitHub에서 `Actions > Deploy output_html to GitHub Pages > Run workflow`를 눌러도 됩니다.
 
 ## 자주 하는 실수
 
 - `sync-reports`만 실행하고 `export-combined-dashboard`를 안 하면 HTML은 갱신되지 않습니다.
+- `build-snapshot`을 빼먹으면 HTML은 새 날짜로 보일 수 있지만 DB의 저장 스냅샷 목록은 예전 날짜에 머뭅니다.
 - `output_html/`을 커밋하지 않으면 GitHub Pages에는 예전 HTML이 올라갑니다.
 - `site/`는 GitHub Actions가 배포 직전에 새로 만드는 폴더입니다. 로컬 `site/`를 고쳐도 배포에는 직접 쓰이지 않습니다.
-- 날짜를 바꿀 때 `--date`, `--to`, `--output` 파일명, `--csv-output` 파일명을 같은 기준일로 맞춥니다.
+- 날짜를 바꿀 때 DB의 `MAX(disclosed_at)`, `build-snapshot --date`, `export-combined-dashboard --date`, `--to`, `--output` 파일명, `--csv-output` 파일명을 같은 기준일로 맞춥니다.
 - 전략 탭 내용은 HTML 생성 시 자동 포함됩니다. 전략 문구 자체를 바꾸려면 `src/export/strategy_html_writer.py` 또는 `docs/nps_10pct_strategy.md`를 수정한 뒤 다시 HTML을 생성합니다.
 
 ## 주의할 점
