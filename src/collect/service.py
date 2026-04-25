@@ -9,23 +9,28 @@ from src.utils import clean_text, parse_number
 
 
 def sync_reports(repository: Repository, client: DartClient, start_date: str, end_date: str) -> dict[str, int]:
+    print(f"[sync-reports] listing reports {start_date}..{end_date}", flush=True)
     reports = client.list_reports_by_detail_types(
         start_date,
         end_date,
         DEFAULT_REPORT_DETAIL_TYPES,
     )
+    print(f"[sync-reports] candidates: {len(reports)}", flush=True)
     keyword_matched = 0
     parsed_count = 0
     failed_count = 0
     skipped_count = 0
     majorstock_cache: dict[str, list[dict[str, str]]] = {}
     elestock_cache: dict[str, list[dict[str, str]]] = {}
-    for report in reports:
+    for index, report in enumerate(reports, start=1):
+        label = f"{report.disclosed_at} {report.corp_name} {report.report_name} ({report.receipt_no})"
+        print(f"[{index}/{len(reports)}] checking {label}", flush=True)
         try:
             official_events = _parse_official_ownership_events(client, report, majorstock_cache, elestock_cache)
             if official_events is not None:
                 if not official_events:
                     skipped_count += 1
+                    print(f"[{index}/{len(reports)}] skipped {label}: no 국민연금공단 ownership row", flush=True)
                     continue
                 keyword_matched += 1
                 repository.upsert_report(report)
@@ -34,6 +39,7 @@ def sync_reports(repository: Repository, client: DartClient, start_date: str, en
                 repository.upsert_report(report)
                 repository.replace_events_for_report(report.receipt_no, official_events)
                 parsed_count += 1
+                print(f"[{index}/{len(reports)}] parsed {label}: {len(official_events)} event(s)", flush=True)
                 continue
 
             sections = None
@@ -41,6 +47,7 @@ def sync_reports(repository: Repository, client: DartClient, start_date: str, en
                 sections = fetch_viewer_sections(client, report.receipt_no)
                 if not any("국민연금공단" in section.html for section in sections):
                     skipped_count += 1
+                    print(f"[{index}/{len(reports)}] skipped {label}: keyword not found in viewer", flush=True)
                     continue
             else:
                 inspection = inspect_report_for_keyword(
@@ -51,6 +58,7 @@ def sync_reports(repository: Repository, client: DartClient, start_date: str, en
                 )
                 if not (inspection.page_keyword_hit or inspection.viewer_keyword_hit):
                     skipped_count += 1
+                    print(f"[{index}/{len(reports)}] skipped {label}: keyword not found", flush=True)
                     continue
             keyword_matched += 1
             repository.upsert_report(report)
@@ -64,11 +72,13 @@ def sync_reports(repository: Repository, client: DartClient, start_date: str, en
             repository.upsert_report(report)
             repository.replace_events_for_report(report.receipt_no, events)
             parsed_count += 1
+            print(f"[{index}/{len(reports)}] parsed {label}: {len(events)} event(s)", flush=True)
         except Exception as exc:  # noqa: BLE001
             report.parse_status = "failed"
             report.parse_error = str(exc)
             repository.upsert_report(report)
             failed_count += 1
+            print(f"[{index}/{len(reports)}] failed {label}: {exc}", flush=True)
     return {
         "candidates": len(reports),
         "keyword_matched": keyword_matched,
