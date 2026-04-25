@@ -19,6 +19,7 @@ from src.db.repository import Repository
 from src.export.combined_html_writer import export_combined_html
 from src.export.sector_trends_writer import export_sector_trends_csv, export_sector_trends_report
 from src.export.sector_trends_writer import render_sector_trends_html
+from src.export.strategy_html_writer import render_strategy_html
 from src.export.xlsx_writer import export_snapshot_workbook
 from src.snapshot.service import build_snapshot, calculate_snapshot_rows
 from src.utils import parse_iso_date, safe_slug
@@ -277,6 +278,7 @@ def main(argv: list[str] | None = None) -> int:
                 output_path,
                 dashboard_html=render_dashboard_html(dashboard_data),
                 sector_trends_html=sector_html,
+                strategy_html=render_strategy_html(),
             )
             print(json.dumps({"html": str(combined), "csv": str(csv_path)}, ensure_ascii=False, indent=2))
             return 0

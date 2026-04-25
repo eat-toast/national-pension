@@ -15,14 +15,17 @@ class CombinedHtmlWriterTest(unittest.TestCase):
                 output,
                 dashboard_html="<html><body>dashboard</body></html>",
                 sector_trends_html="<html><body>sector</body></html>",
+                strategy_html="<html><body>strategy</body></html>",
             )
 
             html = output.read_text(encoding="utf-8")
             self.assertIn("포트폴리오", html)
             self.assertIn("섹터 변화", html)
+            self.assertIn("전략", html)
             self.assertIn("srcdoc", html)
             self.assertIn("dashboard", html)
             self.assertIn("sector", html)
+            self.assertIn("strategy", html)
 
 
 if __name__ == "__main__":

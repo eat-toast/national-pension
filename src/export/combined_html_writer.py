@@ -9,6 +9,7 @@ def export_combined_html(
     *,
     dashboard_html: str,
     sector_trends_html: str,
+    strategy_html: str | None = None,
     title: str = "국민연금 국내주식 통합 대시보드",
 ) -> Path:
     output = Path(output_path)
@@ -17,6 +18,7 @@ def export_combined_html(
         _render_combined_html(
             dashboard_html=dashboard_html,
             sector_trends_html=sector_trends_html,
+            strategy_html=strategy_html,
             title=title,
         ),
         encoding="utf-8",
@@ -24,9 +26,26 @@ def export_combined_html(
     return output
 
 
-def _render_combined_html(*, dashboard_html: str, sector_trends_html: str, title: str) -> str:
+def _render_combined_html(
+    *,
+    dashboard_html: str,
+    sector_trends_html: str,
+    strategy_html: str | None,
+    title: str,
+) -> str:
     dashboard_srcdoc = escape(dashboard_html, quote=True)
     sector_srcdoc = escape(sector_trends_html, quote=True)
+    strategy_srcdoc = escape(strategy_html, quote=True) if strategy_html is not None else ""
+    strategy_button = (
+        '<button type="button" data-frame="strategyFrame" aria-pressed="false">전략</button>'
+        if strategy_html is not None
+        else ""
+    )
+    strategy_frame = (
+        f'<iframe id="strategyFrame" title="매수 전략" srcdoc="{strategy_srcdoc}" hidden></iframe>'
+        if strategy_html is not None
+        else ""
+    )
     escaped_title = escape(title)
     return f"""<!doctype html>
 <html lang="ko">
@@ -130,17 +149,19 @@ def _render_combined_html(*, dashboard_html: str, sector_trends_html: str, title
     <div class="wrap top">
       <div>
         <h1>{escaped_title}</h1>
-        <div class="note">포트폴리오와 섹터 변화를 하나의 정적 HTML 안에 탭으로 묶었습니다.</div>
+        <div class="note">포트폴리오, 섹터 변화, 전략 메모를 하나의 정적 HTML 안에 탭으로 묶었습니다.</div>
       </div>
       <div class="tabs">
         <button type="button" data-frame="dashboardFrame" aria-pressed="true">포트폴리오</button>
         <button type="button" data-frame="sectorFrame" aria-pressed="false">섹터 변화</button>
+        {strategy_button}
       </div>
     </div>
   </header>
   <main class="frame-wrap">
     <iframe id="dashboardFrame" title="포트폴리오 대시보드" srcdoc="{dashboard_srcdoc}"></iframe>
     <iframe id="sectorFrame" title="섹터 변화" srcdoc="{sector_srcdoc}" hidden></iframe>
+    {strategy_frame}
   </main>
   <script>
     const buttons = document.querySelectorAll("button[data-frame]");
