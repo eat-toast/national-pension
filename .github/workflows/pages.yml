@@ -1,6 +1,12 @@
 name: Deploy output_html to GitHub Pages
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - "output_html/**"
+      - ".github/workflows/pages.yml"
   workflow_dispatch:
 
 permissions:
