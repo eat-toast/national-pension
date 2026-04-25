@@ -30,6 +30,7 @@ class AppConfig:
     dart_request_delay_seconds: float
     db_path: Path
     output_dir: Path
+    html_output_dir: Path
 
     @classmethod
     def from_env(cls) -> "AppConfig":
@@ -46,6 +47,7 @@ class AppConfig:
             dart_request_delay_seconds=_parse_float(os.getenv("DART_REQUEST_DELAY_SECONDS"), 0.35),
             db_path=Path(os.getenv("NPS_DB_PATH", "data/nps_portfolio.sqlite3")),
             output_dir=Path(os.getenv("NPS_OUTPUT_DIR", "output")),
+            html_output_dir=Path(os.getenv("NPS_HTML_OUTPUT_DIR", "output_html")),
         )
 
 

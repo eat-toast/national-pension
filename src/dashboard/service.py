@@ -229,6 +229,9 @@ def render_dashboard_html(data: dict[str, Any]) -> str:
       gap: 14px;
       align-items: start;
     }}
+    .grid > *, .split > * {{
+      min-width: 0;
+    }}
     .section {{
       border-top: 1px solid var(--line);
       padding: 16px 0 0;
@@ -254,7 +257,8 @@ def render_dashboard_html(data: dict[str, Any]) -> str:
       border: 1px solid var(--line);
       border-radius: 8px;
       background: var(--surface);
-      overflow: hidden;
+      overflow: auto;
+      max-width: 100%;
     }}
     .chart {{
       min-height: 290px;
@@ -295,6 +299,12 @@ def render_dashboard_html(data: dict[str, Any]) -> str:
       border-collapse: collapse;
       font-size: 13px;
     }}
+    #baselineTable, #snapshotTable {{
+      min-width: 520px;
+    }}
+    #detailTable, #searchTable {{
+      min-width: 980px;
+    }}
     th, td {{
       padding: 10px 12px;
       border-bottom: 1px solid #e9edf3;
@@ -310,6 +320,12 @@ def render_dashboard_html(data: dict[str, Any]) -> str:
     }}
     td.num, th.num {{ text-align: right; font-variant-numeric: tabular-nums; }}
     tbody tr:hover {{ background: #f8fafc; }}
+    a.report-link {{
+      color: var(--blue);
+      font-weight: 700;
+      text-decoration: none;
+    }}
+    a.report-link:hover {{ text-decoration: underline; }}
     .delta-up {{ color: var(--green); font-weight: 700; }}
     .delta-down {{ color: var(--coral); font-weight: 700; }}
     .rank {{
@@ -335,6 +351,45 @@ def render_dashboard_html(data: dict[str, Any]) -> str:
       gap: 8px;
       align-items: center;
       font-size: 12px;
+    }}
+    .info-tip {{
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 17px;
+      height: 17px;
+      margin-left: 6px;
+      border: 1px solid var(--line);
+      border-radius: 50%;
+      color: var(--muted);
+      background: var(--surface);
+      font-size: 11px;
+      font-weight: 800;
+      cursor: help;
+    }}
+    .info-tip::after {{
+      content: attr(data-tip);
+      position: absolute;
+      left: 50%;
+      bottom: calc(100% + 8px);
+      transform: translateX(-50%);
+      width: 230px;
+      padding: 8px 10px;
+      border-radius: 7px;
+      background: var(--ink);
+      color: #fff;
+      font-size: 12px;
+      line-height: 1.35;
+      font-weight: 600;
+      white-space: normal;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 120ms ease;
+      z-index: 5;
+    }}
+    .info-tip:hover::after, .info-tip:focus::after {{
+      opacity: 1;
     }}
     .track {{
       height: 8px;
@@ -471,10 +526,15 @@ def render_dashboard_html(data: dict[str, Any]) -> str:
         </div>
       </section>
       <aside class="section">
-        <div class="section-title"><h2>큰 변동</h2><span class="hint">절대 증감수량</span></div>
+        <div class="section-title">
+          <h2>큰 변동 <span class="info-tip" tabindex="0" data-tip="공시 이벤트별 수량 증감의 절댓값이 큰 순서입니다. 매수와 매도 방향은 구분하지 않고 변동 규모만 봅니다.">i</span></h2>
+          <span class="hint">절대 증감수량</span>
+        </div>
         <div class="table-surface"><div class="mini-bars" id="changeBars"></div></div>
-        <div class="section-title" style="margin-top:14px"><h2>2024 대비 지분율</h2><span class="hint">%p</span></div>
-        <div class="table-surface"><div class="mini-bars" id="ownershipBars"></div></div>
+        <div class="section-title" style="margin-top:14px"><h2>2024 대비 지분율 상승</h2><span class="hint">%p</span></div>
+        <div class="table-surface"><div class="mini-bars" id="ownershipUpBars"></div></div>
+        <div class="section-title" style="margin-top:14px"><h2>2024 대비 지분율 하락</h2><span class="hint">%p</span></div>
+        <div class="table-surface"><div class="mini-bars" id="ownershipDownBars"></div></div>
       </aside>
     </div>
     <section class="section">
@@ -501,12 +561,18 @@ def render_dashboard_html(data: dict[str, Any]) -> str:
     const signedPp = v => v == null ? "" : `${{v > 0 ? "+" : ""}}${{(v * 100).toFixed(2)}}%p`;
     const shares = v => v == null ? "" : fmt.format(Math.round(v));
     const money = v => v == null ? "" : fmt.format(Math.round(v));
+    const won = v => v == null ? "" : `${{fmt.format(Math.round(v))}}원`;
     const signed = v => v == null ? "" : `${{v > 0 ? "+" : ""}}${{shares(v)}}`;
     const cls = v => v > 0 ? "delta-up" : v < 0 ? "delta-down" : "";
     const norm = value => String(value || "").toLowerCase().replace(/\\s+/g, "").replaceAll("(주)", "").replaceAll("㈜", "").replace(/보통주$|우선주$/g, "");
 
     function cell(value, className = "") {{
       return `<td class="${{className}}">${{value ?? ""}}</td>`;
+    }}
+
+    function reportLink(row) {{
+      if (!row.sourceUrl) return row.changeReason;
+      return `<a class="report-link" href="${{row.sourceUrl}}" target="_blank" rel="noopener noreferrer">${{row.changeReason || "공시 보기"}}</a>`;
     }}
 
     function renderKpis() {{
@@ -548,15 +614,15 @@ def render_dashboard_html(data: dict[str, Any]) -> str:
 
     function renderBaseline() {{
       renderTable("baselineTable",
-        [{{label:"#"}}, {{label:"종목"}}, {{label:"평가액", className:"num"}}, {{label:"지분율", className:"num"}}, {{label:"최신 대비", className:"num"}}],
+        [{{label:"#"}}, {{label:"종목"}}, {{label:"평가액", className:"num"}}, {{label:"지분율", className:"num"}}, {{label:"추정 평가단가", className:"num"}}, {{label:"최신 대비", className:"num"}}],
         DASHBOARD_DATA.baselineTop.slice(0, 12).map(row => `<tr>
-          ${{cell(row.rank, "rank")}}${{cell(row.companyName, "company")}}${{cell(money(row.marketValue), "num")}}${{cell(pct(row.ownership), "num")}}${{cell(signedPp(row.currentOwnershipDiff), `num ${{cls(row.currentOwnershipDiff)}}`)}}
+          ${{cell(row.rank, "rank")}}${{cell(row.companyName, "company")}}${{cell(money(row.marketValue), "num")}}${{cell(pct(row.ownership), "num")}}${{cell(won(row.estimatedValuationUnitPrice), "num")}}${{cell(signedPp(row.currentOwnershipDiff), `num ${{cls(row.currentOwnershipDiff)}}`)}}
         </tr>`)
       );
       renderTable("snapshotTable",
-        [{{label:"#"}}, {{label:"종목"}}, {{label:"코드"}}, {{label:"지분율", className:"num"}}, {{label:"지분율 변동", className:"num"}}, {{label:"수량 변동", className:"num"}}],
+        [{{label:"#"}}, {{label:"종목"}}, {{label:"지분율", className:"num"}}, {{label:"추정 평가단가", className:"num"}}, {{label:"지분율 변동", className:"num"}}, {{label:"수량 변동", className:"num"}}],
         DASHBOARD_DATA.snapshotTop.slice(0, 12).map((row, index) => `<tr>
-          ${{cell(index + 1, "rank")}}${{cell(row.companyName, "company")}}${{cell(row.ticker)}}${{cell(pct(row.ownership), "num")}}${{cell(signedPp(row.lastOwnershipDelta), `num ${{cls(row.lastOwnershipDelta)}}`)}}${{cell(signed(row.lastDeltaShares), `num ${{cls(row.lastDeltaShares)}}`)}}
+          ${{cell(index + 1, "rank")}}${{cell(row.companyName, "company")}}${{cell(pct(row.ownership), "num")}}${{cell(won(row.estimatedValuationUnitPrice), "num")}}${{cell(signedPp(row.lastOwnershipDelta), `num ${{cls(row.lastOwnershipDelta)}}`)}}${{cell(signed(row.lastDeltaShares), `num ${{cls(row.lastDeltaShares)}}`)}}
         </tr>`)
       );
     }}
@@ -576,12 +642,16 @@ def render_dashboard_html(data: dict[str, Any]) -> str:
       }}).join("");
     }}
 
-    function renderDivergingMiniBars(id, rows, valueKey, labelKey, formatValue, limit = 10) {{
+    function renderDivergingMiniBars(id, rows, valueKey, labelKey, formatValue, limit = 10, scaleMax = null) {{
       const shown = rows.slice(0, limit);
-      const max = Math.max(0.0001, ...shown.map(row => Math.abs(row[valueKey] || 0)));
+      if (!shown.length) {{
+        document.getElementById(id).innerHTML = `<div class="empty">표시할 변동이 없습니다.</div>`;
+        return;
+      }}
+      const max = Math.max(0.0001, Number(scaleMax) || 0, ...shown.map(row => Math.abs(Number(row[valueKey] || 0))));
       document.getElementById(id).innerHTML = shown.map(row => {{
-        const value = row[valueKey] || 0;
-        const width = Math.max(2, Math.round(Math.abs(value) / max * 45));
+        const value = Number(row[valueKey] || 0);
+        const width = Math.max(3, Math.min(48, Math.round(Math.abs(value) / max * 48)));
         const direction = value < 0 ? "down" : "up";
         return `<div class="mini-row">
           <div class="company" title="${{row[labelKey]}}">${{row[labelKey]}}</div>
@@ -609,9 +679,9 @@ def render_dashboard_html(data: dict[str, Any]) -> str:
     function renderDetails(kind = "events") {{
       if (kind === "sectors") {{
         renderTable("detailTable",
-          [{{label:"섹터"}}, {{label:"종목 수", className:"num"}}, {{label:"지분율 합계", className:"num"}}, {{label:"지분율 변동", className:"num"}}, {{label:"방향"}}],
+          [{{label:"섹터"}}, {{label:"종목 수", className:"num"}}, {{label:"지분율 합계", className:"num"}}, {{label:"지분율 변동", className:"num"}}],
           DASHBOARD_DATA.sectorRows.map(row => `<tr>
-            ${{cell(row.sectorName)}}${{cell(fmt.format(row.companyCount), "num")}}${{cell(pct(row.ownershipSum), "num")}}${{cell(signedPp(row.ownershipDiffSum), `num ${{cls(row.ownershipDiffSum)}}`)}}${{cell(row.netDirection)}}
+            ${{cell(row.sectorName)}}${{cell(fmt.format(row.companyCount), "num")}}${{cell(pct(row.ownershipSum), "num")}}${{cell(signedPp(row.ownershipDiffSum), `num ${{cls(row.ownershipDiffSum)}}`)}}
           </tr>`)
         );
         return;
@@ -619,7 +689,7 @@ def render_dashboard_html(data: dict[str, Any]) -> str:
       renderTable("detailTable",
         [{{label:"공시일"}}, {{label:"종목"}}, {{label:"코드"}}, {{label:"수량 증감", className:"num"}}, {{label:"지분율 증감", className:"num"}}, {{label:"변동 후 수량", className:"num"}}, {{label:"지분율", className:"num"}}, {{label:"사유"}}],
         DASHBOARD_DATA.latestEvents.map(row => `<tr>
-          ${{cell(row.disclosedAt)}}${{cell(row.companyName, "company")}}${{cell(row.ticker)}}${{cell(signed(row.deltaShares), `num ${{cls(row.deltaShares)}}`)}}${{cell(signedPp(row.ownershipDelta), `num ${{cls(row.ownershipDelta)}}`)}}${{cell(shares(row.sharesAfter), "num")}}${{cell(pct(row.ownershipAfter), "num")}}${{cell(row.changeReason)}}
+          ${{cell(row.disclosedAt)}}${{cell(row.companyName, "company")}}${{cell(row.ticker)}}${{cell(signed(row.deltaShares), `num ${{cls(row.deltaShares)}}`)}}${{cell(signedPp(row.ownershipDelta), `num ${{cls(row.ownershipDelta)}}`)}}${{cell(shares(row.sharesAfter), "num")}}${{cell(pct(row.ownershipAfter), "num")}}${{cell(reportLink(row))}}
         </tr>`)
       );
     }}
@@ -643,7 +713,7 @@ def render_dashboard_html(data: dict[str, Any]) -> str:
           deltaShares: null,
           ownershipAfter: row.ownership,
           ownershipDelta: null,
-          reason: `평가액 ${{money(row.marketValue)}}억원`
+          reason: `평가액 ${{money(row.marketValue)}}억원${{row.estimatedValuationUnitPrice ? ` / 추정 평가단가 ${{won(row.estimatedValuationUnitPrice)}}` : ""}}`
         }}));
       const events = DASHBOARD_DATA.eventHistory.filter(row =>
         norm(row.companyName).includes(q) || norm(row.ticker).includes(q)
@@ -668,7 +738,26 @@ def render_dashboard_html(data: dict[str, Any]) -> str:
     renderTrend();
     renderBaseline();
     renderChangeBars();
-    renderDivergingMiniBars("ownershipBars", DASHBOARD_DATA.ownershipChanges, "ownershipDiff", "companyName", signedPp);
+    const ownershipComparedRows = DASHBOARD_DATA.ownershipChanges.filter(row => Number(row.ownershipDiff || 0) !== 0);
+    const ownershipScaleMax = Math.max(0.0001, ...ownershipComparedRows.map(row => Math.abs(Number(row.ownershipDiff || 0))));
+    renderDivergingMiniBars(
+      "ownershipUpBars",
+      ownershipComparedRows.filter(row => Number(row.ownershipDiff || 0) > 0),
+      "ownershipDiff",
+      "companyName",
+      signedPp,
+      8,
+      ownershipScaleMax
+    );
+    renderDivergingMiniBars(
+      "ownershipDownBars",
+      ownershipComparedRows.filter(row => Number(row.ownershipDiff || 0) < 0),
+      "ownershipDiff",
+      "companyName",
+      signedPp,
+      8,
+      ownershipScaleMax
+    );
     renderDetails();
     renderSearch();
 
@@ -711,6 +800,11 @@ def _ownership_comparisons(baseline_rows: list[BaselineHolding], snapshot_rows: 
                 "currentOwnership": row.estimated_ownership,
                 "ownershipDiff": row.estimated_ownership - baseline.ownership,
                 "baselineRank": baseline.rank,
+                "estimatedShares": row.estimated_shares,
+                "estimatedValuationUnitPrice": _valuation_unit_price(
+                    baseline.market_value_krw_100m,
+                    row.estimated_shares,
+                ),
             }
         )
     return sorted(comparisons, key=lambda item: abs(float(item["ownershipDiff"])), reverse=True)
@@ -813,6 +907,8 @@ def _baseline_dict(row: BaselineHolding, comparison: dict[str, Any] | None = Non
         "ownership": row.ownership,
         "currentOwnership": comparison.get("currentOwnership") if comparison else None,
         "currentOwnershipDiff": comparison.get("ownershipDiff") if comparison else None,
+        "estimatedShares": comparison.get("estimatedShares") if comparison else None,
+        "estimatedValuationUnitPrice": comparison.get("estimatedValuationUnitPrice") if comparison else None,
     }
 
 
@@ -828,6 +924,7 @@ def _snapshot_dict(
         "ownership": row.estimated_ownership,
         "baselineOwnership": comparison.get("baselineOwnership") if comparison else None,
         "baselineOwnershipDiff": comparison.get("ownershipDiff") if comparison else None,
+        "estimatedValuationUnitPrice": comparison.get("estimatedValuationUnitPrice") if comparison else None,
         "lastDeltaShares": row.last_delta_shares,
         "lastOwnershipDelta": _as_float(latest_event.get("ownership_delta")) if latest_event else None,
         "lastChangeReason": row.last_change_reason or "",
@@ -847,6 +944,7 @@ def _event_dict(row: dict[str, Any]) -> dict[str, Any]:
         "sharesAfter": _as_float(row.get("shares_after")),
         "ownershipAfter": _as_float(row.get("ownership_after")),
         "changeReason": str(row.get("change_reason") or ""),
+        "sourceUrl": str(row.get("source_url") or ""),
         "eventType": str(row.get("event_type") or ""),
     }
 
@@ -859,6 +957,12 @@ def _sector_dict(row: dict[str, Any], ownership_diff_sum: float | None = None) -
         "ownershipDiffSum": ownership_diff_sum,
         "netDirection": str(row.get("net_direction") or ""),
     }
+
+
+def _valuation_unit_price(market_value_krw_100m: float | None, shares: float | None) -> float | None:
+    if market_value_krw_100m in (None, 0) or shares in (None, 0):
+        return None
+    return float(market_value_krw_100m) * 100_000_000 / float(shares)
 
 
 def _as_float(value: object | None) -> float | None:

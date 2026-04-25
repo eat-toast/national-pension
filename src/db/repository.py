@@ -88,13 +88,14 @@ class Repository:
         self.connection.commit()
 
     def list_events_until(self, as_of_date: str, basis_type: BasisType) -> list[sqlite3.Row]:
-        basis_column = "effective_date" if basis_type == "effective_date" else "disclosed_at"
+        basis_column = "e.effective_date" if basis_type == "effective_date" else "e.disclosed_at"
         query = f"""
-            SELECT e.*, COALESCE(s.sector_name, '미분류') AS sector_name
+            SELECT e.*, r.source_url AS source_url, COALESCE(s.sector_name, '미분류') AS sector_name
             FROM holding_events e
+            JOIN reports r ON r.receipt_no = e.report_receipt_no
             LEFT JOIN sector_map s ON s.ticker = e.ticker
-            WHERE COALESCE({basis_column}, disclosed_at) <= ?
-            ORDER BY COALESCE({basis_column}, disclosed_at), disclosed_at, id
+            WHERE COALESCE({basis_column}, e.disclosed_at) <= ?
+            ORDER BY COALESCE({basis_column}, e.disclosed_at), e.disclosed_at, e.id
         """
         return list(self.connection.execute(query, (as_of_date,)))
 

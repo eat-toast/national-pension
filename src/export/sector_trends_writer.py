@@ -19,6 +19,7 @@ def export_sector_trends_report(
     start_date: str,
     end_date: str,
     basis_type: str,
+    sector_company_rows: list[dict[str, object]] | None = None,
 ) -> tuple[Path, Path]:
     output = Path(output_path)
     csv_output = Path(csv_path)
@@ -27,17 +28,46 @@ def export_sector_trends_report(
     all_rows = monthly_rows + quarterly_rows
     _write_csv(csv_output, all_rows)
     output.write_text(
-        _render_html(
+        render_sector_trends_html(
             monthly_rows,
             quarterly_rows,
             start_date=start_date,
             end_date=end_date,
             basis_type=basis_type,
             csv_name=csv_output.name,
+            sector_company_rows=sector_company_rows,
         ),
         encoding="utf-8",
     )
     return output, csv_output
+
+
+def export_sector_trends_csv(output_path: str | Path, rows: list[SectorTrendRow]) -> Path:
+    output = Path(output_path)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    _write_csv(output, rows)
+    return output
+
+
+def render_sector_trends_html(
+    monthly_rows: list[SectorTrendRow],
+    quarterly_rows: list[SectorTrendRow],
+    *,
+    start_date: str,
+    end_date: str,
+    basis_type: str,
+    csv_name: str,
+    sector_company_rows: list[dict[str, object]] | None = None,
+) -> str:
+    return _render_html(
+        monthly_rows,
+        quarterly_rows,
+        start_date=start_date,
+        end_date=end_date,
+        basis_type=basis_type,
+        csv_name=csv_name,
+        sector_company_rows=sector_company_rows,
+    )
 
 
 def _write_csv(path: Path, rows: list[SectorTrendRow]) -> None:
@@ -84,6 +114,7 @@ def _render_html(
     end_date: str,
     basis_type: str,
     csv_name: str,
+    sector_company_rows: list[dict[str, object]] | None = None,
 ) -> str:
     data = {
         "meta": {
@@ -97,6 +128,7 @@ def _render_html(
         "monthly": [_row_dict(row) for row in monthly_rows],
         "quarterly": [_row_dict(row) for row in quarterly_rows],
         "sectorTotals": _sector_totals(monthly_rows),
+        "sectorCompanies": sector_company_rows or [],
     }
     payload = json.dumps(data, ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/")
     title = "국민연금 섹터별 월간/분기 변화"
@@ -243,11 +275,15 @@ def _render_html(
       padding: 9px 10px;
       border-bottom: 1px solid var(--line);
       font-size: 13px;
+      cursor: pointer;
     }}
+    .bar-row:hover, .bar-row.selected {{ background: #f2f6f4; }}
+    .bar-row.selected .bar-label {{ color: var(--blue); }}
     .bar-label {{ overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 650; }}
     .bar-track {{ height: 8px; background: #edf0ee; border-radius: 999px; overflow: hidden; }}
     .bar-fill {{ height: 100%; background: var(--blue); border-radius: 999px; }}
     .bar-value {{ text-align: right; font-variant-numeric: tabular-nums; }}
+    #sectorCompanyTable {{ min-width: 780px; }}
     @media (max-width: 900px) {{
       .top {{ align-items: start; flex-direction: column; }}
       .controls {{ justify-content: flex-start; }}
@@ -300,6 +336,15 @@ def _render_html(
         <div class="surface" id="sectorBars"></div>
       </section>
     </div>
+    <section>
+      <div class="section-head">
+        <h2 id="sectorCompanyTitle">섹터별 종목 정보</h2>
+        <div class="hint" id="sectorCompanyCount"></div>
+      </div>
+      <div class="surface table-scroll">
+        <table id="sectorCompanyTable"></table>
+      </div>
+    </section>
   </main>
   <script>
     const DATA = {payload};
@@ -309,6 +354,8 @@ def _render_html(
     const signedNum = value => value == null ? "" : `${{value > 0 ? "+" : ""}}${{fmt.format(Math.round(value))}}`;
     const cls = value => Number(value) > 0 ? "pos" : Number(value) < 0 ? "neg" : "";
     const metricValue = (row, metric) => Math.abs(Number(row[metric] || 0));
+    let selectedSector = "";
+    const cell = (value, className = "") => `<td class="${{className}}">${{value ?? ""}}</td>`;
     function renderMeta() {{
       document.getElementById("meta").textContent =
         `${{DATA.meta.startDate}} - ${{DATA.meta.endDate}} · ${{DATA.meta.basisLabel}} · 생성 ${{DATA.meta.generatedAt}}`;
@@ -351,14 +398,36 @@ def _render_html(
     }}
     function renderBars() {{
       const rows = DATA.sectorTotals.slice().sort((a, b) => b.absOwnershipDelta - a.absOwnershipDelta).slice(0, 16);
+      if (!selectedSector && rows.length) selectedSector = rows[0].sectorName;
       const max = Math.max(...rows.map(row => row.absOwnershipDelta), 0.0001);
       document.getElementById("sectorBars").innerHTML = rows.map(row => `
-        <div class="bar-row">
+        <div class="bar-row ${{row.sectorName === selectedSector ? "selected" : ""}}" data-sector="${{row.sectorName}}">
           <div class="bar-label" title="${{row.sectorName}}">${{row.sectorName}}</div>
           <div class="bar-track"><div class="bar-fill" style="width:${{Math.max(2, row.absOwnershipDelta / max * 100)}}%"></div></div>
           <div class="bar-value ${{cls(row.netOwnershipDelta)}}">${{signedPct(row.netOwnershipDelta)}}</div>
         </div>
       `).join("");
+      document.querySelectorAll(".bar-row[data-sector]").forEach(row => {{
+        row.addEventListener("click", () => {{
+          selectedSector = row.dataset.sector;
+          renderBars();
+          renderSectorCompanies();
+        }});
+      }});
+    }}
+    function renderSectorCompanies() {{
+      const rows = DATA.sectorCompanies
+        .filter(row => row.sectorName === selectedSector)
+        .sort((a, b) => Number(b.ownership || 0) - Number(a.ownership || 0));
+      document.getElementById("sectorCompanyTitle").textContent = selectedSector ? `${{selectedSector}} 종목 정보` : "섹터별 종목 정보";
+      document.getElementById("sectorCompanyCount").textContent = `${{fmt.format(rows.length)}}개 종목`;
+      const head = `<thead><tr>
+        <th>종목</th><th>코드</th><th class="num">지분율</th><th class="num">보유수량</th><th class="num">최근 변동수량</th><th>최근 공시일</th><th>사유</th>
+      </tr></thead>`;
+      const body = rows.map(row => `<tr>
+        ${{cell(row.companyName)}}${{cell(row.ticker)}}${{cell(row.ownership == null ? "" : (row.ownership * 100).toFixed(2) + "%", "num")}}${{cell(row.estimatedShares == null ? "" : fmt.format(Math.round(row.estimatedShares)), "num")}}${{cell(row.lastDeltaShares == null ? "" : signedNum(row.lastDeltaShares), `num ${{cls(row.lastDeltaShares)}}`)}}${{cell(row.lastDisclosedAt)}}${{cell(row.lastChangeReason)}}
+      </tr>`).join("");
+      document.getElementById("sectorCompanyTable").innerHTML = `${{head}}<tbody>${{body || `<tr><td colspan="7">선택한 섹터의 종목 정보가 없습니다.</td></tr>`}}</tbody>`;
     }}
     document.getElementById("periodType").addEventListener("change", renderTable);
     document.getElementById("metric").addEventListener("change", renderTable);
@@ -370,6 +439,7 @@ def _render_html(
     renderKpis();
     renderTable();
     renderBars();
+    renderSectorCompanies();
   </script>
 </body>
 </html>

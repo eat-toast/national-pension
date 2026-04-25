@@ -33,6 +33,7 @@ class DashboardTest(unittest.TestCase):
                     report_name="주식등의대량보유상황보고서",
                     filer_name="국민연금공단",
                     disclosed_at="2025-01-03",
+                    source_url="https://dart.fss.or.kr/dsaf001/main.do?rcpNo=1",
                 )
             )
             repository.replace_events_for_report(
@@ -62,7 +63,15 @@ class DashboardTest(unittest.TestCase):
                 self.assertIn("종목별 히스토리", html)
                 self.assertIn("stockSearch", html)
                 self.assertIn("ownershipDelta", html)
+                self.assertIn("estimatedValuationUnitPrice", html)
+                self.assertIn("추정 평가단가", html)
+                self.assertIn("sourceUrl", html)
+                self.assertIn("report-link", html)
+                self.assertIn("2024 대비 지분율 상승", html)
+                self.assertIn("2024 대비 지분율 하락", html)
+                self.assertIn("공시 이벤트별 수량 증감의 절댓값", html)
                 self.assertIn("renderDivergingMiniBars", html)
+                self.assertIn("ownershipScaleMax", html)
                 self.assertIn("track diverging", html)
                 self.assertIn("0.007400000000000004", html)
         finally:

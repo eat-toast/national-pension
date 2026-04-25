@@ -13,12 +13,14 @@ from src.collect.probe import probe_filings_by_date
 from src.collect.sector_service import sync_sector_map
 from src.collect.service import sync_reports
 from src.config import AppConfig
-from src.dashboard.baseline import load_baseline_holdings
-from src.dashboard.service import export_dashboard
+from src.dashboard.baseline import baseline_year_from_path, load_baseline_holdings
+from src.dashboard.service import build_dashboard_data, export_dashboard, render_dashboard_html
 from src.db.repository import Repository
-from src.export.sector_trends_writer import export_sector_trends_report
+from src.export.combined_html_writer import export_combined_html
+from src.export.sector_trends_writer import export_sector_trends_csv, export_sector_trends_report
+from src.export.sector_trends_writer import render_sector_trends_html
 from src.export.xlsx_writer import export_snapshot_workbook
-from src.snapshot.service import build_snapshot
+from src.snapshot.service import build_snapshot, calculate_snapshot_rows
 from src.utils import parse_iso_date, safe_slug
 
 
@@ -62,6 +64,15 @@ def build_parser() -> argparse.ArgumentParser:
     sector_trends_parser.add_argument("--baseline", default="국내주식 종목별 투자 현황(2024년 말).xlsx")
     sector_trends_parser.add_argument("--output")
     sector_trends_parser.add_argument("--csv-output")
+
+    combined_parser = subparsers.add_parser("export-combined-dashboard", help="포트폴리오와 섹터 변화 탭을 한 HTML로 출력합니다.")
+    combined_parser.add_argument("--date", required=True, help="포트폴리오 대시보드 기준일")
+    combined_parser.add_argument("--from", dest="start_date", required=True, help="섹터 변화 시작일")
+    combined_parser.add_argument("--to", dest="end_date", required=True, help="섹터 변화 종료일")
+    combined_parser.add_argument("--basis", choices=("effective_date", "disclosure_date"), default="disclosure_date")
+    combined_parser.add_argument("--baseline", default="국내주식 종목별 투자 현황(2024년 말).xlsx")
+    combined_parser.add_argument("--output")
+    combined_parser.add_argument("--csv-output")
 
     alerts_parser = subparsers.add_parser("send-alerts", help="카카오톡 나에게 보내기 알림을 보냅니다.")
     alerts_parser.add_argument("--since", required=True)
@@ -186,7 +197,7 @@ def main(argv: list[str] | None = None) -> int:
             output_path = (
                 Path(args.output)
                 if args.output
-                else config.output_dir / f"nps_dashboard_{safe_slug(as_of_date)}_{args.basis}.html"
+                else config.html_output_dir / f"nps_dashboard_{safe_slug(as_of_date)}_{args.basis}.html"
             )
             exported = export_dashboard(output_path, args.baseline, repository, as_of_date, args.basis)
             print(str(exported))
@@ -198,10 +209,11 @@ def main(argv: list[str] | None = None) -> int:
             baseline_rows = load_baseline_holdings(args.baseline)
             event_rows = [dict(row) for row in repository.list_events_until(end_date, args.basis)]
             trends = build_sector_trends(event_rows, baseline_rows, start_date, end_date, args.basis)
+            snapshot_rows, _ = calculate_snapshot_rows(repository, end_date, args.basis)
             output_path = (
                 Path(args.output)
                 if args.output
-                else config.output_dir
+                else config.html_output_dir
                 / f"nps_sector_trends_{safe_slug(start_date)}_{safe_slug(end_date)}_{args.basis}.html"
             )
             csv_path = (
@@ -217,8 +229,56 @@ def main(argv: list[str] | None = None) -> int:
                 start_date=start_date,
                 end_date=end_date,
                 basis_type=args.basis,
+                sector_company_rows=_sector_company_rows(snapshot_rows),
             )
             print(json.dumps({"html": str(html_path), "csv": str(exported_csv_path)}, ensure_ascii=False, indent=2))
+            return 0
+
+        if args.command == "export-combined-dashboard":
+            as_of_date = parse_iso_date(args.date)
+            start_date = parse_iso_date(args.start_date)
+            end_date = parse_iso_date(args.end_date)
+            baseline_rows = load_baseline_holdings(args.baseline)
+            snapshot_rows, sector_rows = calculate_snapshot_rows(repository, as_of_date, args.basis)
+            dashboard_event_rows = [dict(row) for row in repository.list_events_until(as_of_date, args.basis)]
+            trend_event_rows = [dict(row) for row in repository.list_events_until(end_date, args.basis)]
+            dashboard_data = build_dashboard_data(
+                baseline_rows=baseline_rows,
+                snapshot_rows=snapshot_rows,
+                event_rows=dashboard_event_rows,
+                sector_rows=[asdict(row) for row in sector_rows],
+                as_of_date=as_of_date,
+                basis_type=args.basis,
+                baseline_year=baseline_year_from_path(args.baseline),
+            )
+            trends = build_sector_trends(trend_event_rows, baseline_rows, start_date, end_date, args.basis)
+            trend_snapshot_rows, _ = calculate_snapshot_rows(repository, end_date, args.basis)
+            output_path = (
+                Path(args.output)
+                if args.output
+                else config.html_output_dir / f"nps_combined_{safe_slug(as_of_date)}_{args.basis}.html"
+            )
+            csv_path = (
+                Path(args.csv_output)
+                if args.csv_output
+                else output_path.with_name(f"{output_path.stem}_sector_trends.csv")
+            )
+            export_sector_trends_csv(csv_path, trends["monthly"] + trends["quarterly"])
+            sector_html = render_sector_trends_html(
+                trends["monthly"],
+                trends["quarterly"],
+                start_date=start_date,
+                end_date=end_date,
+                basis_type=args.basis,
+                csv_name=csv_path.name,
+                sector_company_rows=_sector_company_rows(trend_snapshot_rows),
+            )
+            combined = export_combined_html(
+                output_path,
+                dashboard_html=render_dashboard_html(dashboard_data),
+                sector_trends_html=sector_html,
+            )
+            print(json.dumps({"html": str(combined), "csv": str(csv_path)}, ensure_ascii=False, indent=2))
             return 0
 
         if args.command == "send-alerts":
@@ -256,6 +316,22 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     finally:
         repository.close()
+
+
+def _sector_company_rows(snapshot_rows: list[object]) -> list[dict[str, object]]:
+    return [
+        {
+            "sectorName": getattr(row, "sector_name"),
+            "companyName": getattr(row, "company_name"),
+            "ticker": getattr(row, "ticker") or "",
+            "estimatedShares": getattr(row, "estimated_shares"),
+            "ownership": getattr(row, "estimated_ownership"),
+            "lastDeltaShares": getattr(row, "last_delta_shares"),
+            "lastChangeReason": getattr(row, "last_change_reason") or "",
+            "lastDisclosedAt": getattr(row, "last_disclosed_at"),
+        }
+        for row in snapshot_rows
+    ]
 
 
 if __name__ == "__main__":

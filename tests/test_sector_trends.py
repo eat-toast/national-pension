@@ -4,6 +4,7 @@ import unittest
 
 from src.analysis.sector_trends import build_sector_trends
 from src.dashboard.baseline import BaselineHolding
+from src.export.sector_trends_writer import render_sector_trends_html
 
 
 class SectorTrendsTest(unittest.TestCase):
@@ -54,6 +55,32 @@ class SectorTrendsTest(unittest.TestCase):
         quarterly = {(row.period, row.sector_name): row for row in trends["quarterly"]}
         self.assertAlmostEqual(quarterly[("2025-Q1", "IT")].net_ownership_delta, 0.005)
         self.assertAlmostEqual(quarterly[("2025-Q2", "음식료")].net_ownership_delta, 0.01)
+
+    def test_render_includes_clickable_sector_company_table(self) -> None:
+        html = render_sector_trends_html(
+            [],
+            [],
+            start_date="2025-01-01",
+            end_date="2025-12-31",
+            basis_type="disclosure_date",
+            csv_name="sector.csv",
+            sector_company_rows=[
+                {
+                    "sectorName": "IT",
+                    "companyName": "삼성전자",
+                    "ticker": "005930",
+                    "estimatedShares": 1000,
+                    "ownership": 0.08,
+                    "lastDeltaShares": 100,
+                    "lastDisclosedAt": "2025-01-03",
+                    "lastChangeReason": "장내매수",
+                }
+            ],
+        )
+
+        self.assertIn("sectorCompanyTable", html)
+        self.assertIn("renderSectorCompanies", html)
+        self.assertIn("삼성전자", html)
 
 
 if __name__ == "__main__":
