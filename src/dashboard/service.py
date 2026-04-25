@@ -339,6 +339,13 @@ def render_dashboard_html(data: dict[str, Any]) -> str:
       text-overflow: ellipsis;
       white-space: nowrap;
     }}
+    .company-sub {{
+      display: block;
+      margin-top: 2px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 650;
+    }}
     .mini-bars {{
       display: grid;
       gap: 8px;
@@ -526,8 +533,8 @@ def render_dashboard_html(data: dict[str, Any]) -> str:
       </section>
       <aside class="section">
         <div class="section-title">
-          <h2>큰 변동 <span class="info-tip" tabindex="0" data-tip="공시 이벤트별 수량 증감의 절댓값이 큰 순서입니다. 매수와 매도 방향은 구분하지 않고 변동 규모만 봅니다.">i</span></h2>
-          <span class="hint">절대 증감수량</span>
+          <h2>큰 변동 <span class="info-tip" tabindex="0" data-tip="공시 이벤트별 수량 증감의 절댓값이 큰 순서입니다. 지분율 증감은 변동 후 지분율에서 직전 공시 또는 기준 엑셀의 지분율을 뺀 %p입니다.">i</span></h2>
+          <span class="hint">공시일 · 수량/%p</span>
         </div>
         <div class="table-surface"><div class="mini-bars" id="changeBars"></div></div>
         <div class="section-title" style="margin-top:14px"><h2>2024 대비 지분율 상승</h2><span class="hint">%p</span></div>
@@ -667,8 +674,11 @@ def render_dashboard_html(data: dict[str, Any]) -> str:
         const value = row.deltaShares || 0;
         const width = Math.max(2, Math.round(Math.abs(value) / max * 100));
         const direction = value < 0 ? "down" : "up";
+        const date = row.disclosedAt || row.effectiveDate || "";
         return `<div class="mini-row">
-          <div class="company" title="${{row.companyName}}">${{row.companyName}}</div>
+          <div class="company" title="${{row.companyName}} ${{date}}">
+            ${{row.companyName}}<span class="company-sub">${{date}}</span>
+          </div>
           <div class="track"><div class="fill ${{direction}}" style="--w:${{width}}%"></div></div>
           <div class="num ${{cls(value)}}">${{signed(value)}}<br>${{signedPp(row.ownershipDelta)}}</div>
         </div>`;
